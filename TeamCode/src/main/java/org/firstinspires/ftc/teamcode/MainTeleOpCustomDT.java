@@ -12,7 +12,7 @@ import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @TeleOp(name="Main TeleOp", group="TeleOp")
-public class MainTeleOp extends OpMode {
+public class MainTeleOpCustomDT extends OpMode {
 
     // --- Subsystems ---
     private Follower follower;
@@ -32,6 +32,17 @@ public class MainTeleOp extends OpMode {
     private final double REG_A = 0.0321632;   // quadratic
     private final double REG_B = -0.489268;   // linear
     private final double REG_C = 1236.75193;  // constant base speed
+
+    // --- Slew Rate Limiter Variables ---
+    private double currentForward = 0.0;
+    private double currentStrafe = 0.0;
+    private double currentTurn = 0.0;
+    private long lastDriveTime = 0;
+
+    // Tuning constant: Max amount of power change allowed per second.
+    // 2.5 means it takes 0.4 seconds to stop from full speed (1.0 / 2.5 = 0.4s).
+    // Lower this number to stop smoother (less tipping), raise it to stop faster.
+    public static double DRIVE_RATE_LIMIT = 2.5;
 
     // --- Holding Poses ---
     private final Pose resetPose  = new Pose(7, 9, Math.toRadians(90));
@@ -93,6 +104,7 @@ public class MainTeleOp extends OpMode {
     @Override
     public void start() {
         follower.startTeleopDrive();
+        lastDriveTime = System.currentTimeMillis();
     }
 
     @Override
@@ -113,11 +125,26 @@ public class MainTeleOp extends OpMode {
             holdingEmptyGate = false;
         }
 
-        // --- Drivetrain ---
-        double driveForward = holdingEmptyGate ? 0 : gamepad1.left_stick_y;
-        double driveStrafe  = holdingEmptyGate ? 0 : -gamepad1.left_stick_x;
-        double driveTurn    = holdingEmptyGate ? 0 : -gamepad1.right_stick_x;
-        follower.setTeleOpDrive(-driveForward, driveStrafe, driveTurn, true);
+        // --- Drivetrain with Slew Rate Limiting ---
+        long currentMillis = System.currentTimeMillis();
+        double dtDrive = (currentMillis - lastDriveTime) / 1000.0;
+        lastDriveTime = currentMillis;
+
+        // 1. Get raw target inputs from gamepad
+        double targetForward = holdingEmptyGate ? 0 : gamepad1.left_stick_y;
+        double targetStrafe  = holdingEmptyGate ? 0 : -gamepad1.left_stick_x;
+        double targetTurn    = holdingEmptyGate ? 0 : -gamepad1.right_stick_x;
+
+        // 2. Calculate maximum allowed change for this specific frame
+        double maxChange = DRIVE_RATE_LIMIT * dtDrive;
+
+        // 3. Step the current powers toward the targets, clamped by maxChange
+        currentForward += Math.max(-maxChange, Math.min(maxChange, targetForward - currentForward));
+        currentStrafe  += Math.max(-maxChange, Math.min(maxChange, targetStrafe - currentStrafe));
+        currentTurn    += Math.max(-maxChange, Math.min(maxChange, targetTurn - currentTurn));
+
+        // 4. Send the smoothed values to Pedro Pathing
+        follower.setTeleOpDrive(-currentForward, currentStrafe, currentTurn, true);
 
         // --- Manual Velocity Prediction Math ---
         Pose currentPose = follower.getPose();
