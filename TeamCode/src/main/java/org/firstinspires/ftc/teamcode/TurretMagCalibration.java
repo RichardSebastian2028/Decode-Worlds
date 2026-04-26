@@ -12,7 +12,7 @@ public class TurretMagCalibration extends LinearOpMode {
     private DigitalChannel limitSwitch;
 
     // Must match your TurretController math
-    private static final double GEAR_RATIO = 189.0 / 80.0;
+    private static final double GEAR_RATIO = 58 / 20;
     private static final double TICKS_PER_MOTOR_REV = 384.5;
     private static final double COUNTS_PER_DEGREE = (TICKS_PER_MOTOR_REV * GEAR_RATIO) / 360.0;
 

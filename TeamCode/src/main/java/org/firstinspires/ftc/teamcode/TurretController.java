@@ -24,7 +24,7 @@ public class TurretController {
     public TurretState currentState = TurretState.HOMING;
 
     private static final double HOMING_POWER = -0.55; // Moves right to find the switch
-    private static final long PAUSE_DURATION_MS = 1000; // 1 second pause to prevent gear slip
+    private static final long PAUSE_DURATION_MS = 150; // 1 second pause to prevent gear slip
     private long pauseStartTime = 0;
 
     // ================= GEAR PROTECTION (SLEW RATE) =================
@@ -32,25 +32,28 @@ public class TurretController {
     private double currentAppliedPower = 0.0;
 
     // ================= MOTOR + GEAR =================
-    private static final double GEAR_RATIO = 58 / 20;
+    private static final double GEAR_RATIO = 58.0 / 20.0;
     private static final double TICKS_PER_MOTOR_REV = 384.5;
     private static final double COUNTS_PER_DEGREE = (TICKS_PER_MOTOR_REV * GEAR_RATIO) / 360.0;
 
-    // ================= LIMITS =================
+    // ================= LIMITS & OFFSETS =================
     private static final double MIN_ANGLE = -180.0;
     private static final double MAX_ANGLE = 180.0;
 
+    // *** NEW: Tell the code where the limit switch physically is relative to "straight ahead" ***
+    // e.g., If the switch is 90 degrees to the right, and right is negative, use -90.0
+    private static final double HOMING_ANGLE_DEGREES = -12.17; // <-- TUNE THIS
+
     // ================= GOAL LOCATION =================
     private static final double GOAL_X = 5.3;
-    private static final double GOAL_Y = 135.4
-            ;
+    private static final double GOAL_Y = 135.4;
 
     // ================= TURRET PIVOT OFFSET =================
     private static final double TURRET_OFFSET_FORWARD = 0.0;
     private static final double TURRET_OFFSET_STRAFE = 0.0;
 
     // ================= FINE TRIM =================
-    public double ANGLE_OFFSET = 0;
+    public double ANGLE_OFFSET = -62;
 
     // ================= PREDICTIVE AIMING =================
     private static final double XY_SCALAR = 0.0; // Set to 0 to stop predictive jittering
@@ -59,9 +62,9 @@ public class TurretController {
     // ================= PID CONTROL (SOFT TUNING FOR PLASTIC GEARS) =================
     private static final double KP = 0.035;
     private static final double KD = 0.001;
-    private static final double KF = 0.06;
+    private static final double KF = 0.12;
     private static final double MAX_POWER = 0.6; // Capped speed to protect gears
-    private static final double DEADBAND = 0.5;
+    private static final double DEADBAND = 0.2;
 
     private double targetAngle = 0.0;
     private double previousAngle = 0.0;
@@ -97,7 +100,10 @@ public class TurretController {
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         targetAngle = 0;
+
+        // Reset offset to assume we are straight ahead IF called manually
         encoderOffset = 0;
+
         currentAppliedPower = 0.0;
         turretMotor.setPower(0);
         wasLimitTriggered = false;
@@ -110,7 +116,8 @@ public class TurretController {
 
         if (isTriggered && !wasLimitTriggered) {
             int rawTicks = turretMotor.getCurrentPosition();
-            encoderOffset = -rawTicks; // The limit switch IS exactly 0
+            // *** UPDATED: Set the offset so current position evaluates to HOMING_ANGLE_DEGREES
+            encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE) - rawTicks;
         }
         wasLimitTriggered = isTriggered;
     }
@@ -191,8 +198,12 @@ public class TurretController {
                 turretMotor.setPower(0);
                 turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
                 turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-                encoderOffset = 0;
-                previousAngle = 0;
+
+                // *** UPDATED: Inject the physical angle of the limit switch into the offset
+                encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE);
+
+                // Keep derivative calculation smooth by resetting previous angle to where we are now
+                previousAngle = HOMING_ANGLE_DEGREES;
                 currentAppliedPower = 0.0;
 
                 // Start the pause timer and switch state
@@ -260,16 +271,23 @@ public class TurretController {
         targetPower = Range.clip(targetPower, -currentMaxPower, currentMaxPower);
 
         // =========================================================
-        // 6. GEAR PROTECTION: SLEW RATE LIMITER
+        // 6. GEAR PROTECTION: ASYMMETRIC SLEW RATE LIMITER
         // =========================================================
         double maxPowerChange = POWER_ACCEL_LIMIT * dt;
 
-        if (targetPower > currentAppliedPower + maxPowerChange) {
-            currentAppliedPower += maxPowerChange;
-        } else if (targetPower < currentAppliedPower - maxPowerChange) {
-            currentAppliedPower -= maxPowerChange;
-        } else {
+        // If we are trying to STOP or slow down, allow instant power changes to prevent overshoot
+        if (Math.abs(targetPower) < Math.abs(currentAppliedPower) || Math.signum(targetPower) != Math.signum(currentAppliedPower)) {
             currentAppliedPower = targetPower;
+        }
+        // If we are ACCELERATING, limit the rate of change to protect gears
+        else {
+            if (targetPower > currentAppliedPower + maxPowerChange) {
+                currentAppliedPower += maxPowerChange;
+            } else if (targetPower < currentAppliedPower - maxPowerChange) {
+                currentAppliedPower -= maxPowerChange;
+            } else {
+                currentAppliedPower = targetPower;
+            }
         }
 
         // Apply smoothed power to motor
