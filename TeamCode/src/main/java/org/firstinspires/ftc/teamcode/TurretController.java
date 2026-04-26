@@ -23,7 +23,7 @@ public class TurretController {
     public enum TurretState { HOMING, PAUSED, TRACKING }
     public TurretState currentState = TurretState.HOMING;
 
-    private static final double HOMING_POWER = -0.1; // Moves right to find the switch
+    private static final double HOMING_POWER = -0.55; // Moves right to find the switch
     private static final long PAUSE_DURATION_MS = 1000; // 1 second pause to prevent gear slip
     private long pauseStartTime = 0;
 
@@ -32,7 +32,7 @@ public class TurretController {
     private double currentAppliedPower = 0.0;
 
     // ================= MOTOR + GEAR =================
-    private static final double GEAR_RATIO = 189.0 / 80.0;
+    private static final double GEAR_RATIO = 58 / 20;
     private static final double TICKS_PER_MOTOR_REV = 384.5;
     private static final double COUNTS_PER_DEGREE = (TICKS_PER_MOTOR_REV * GEAR_RATIO) / 360.0;
 
@@ -41,8 +41,8 @@ public class TurretController {
     private static final double MAX_ANGLE = 180.0;
 
     // ================= GOAL LOCATION =================
-    private static final double GOAL_X = 5;
-    private static final double GOAL_Y = 90
+    private static final double GOAL_X = 5.3;
+    private static final double GOAL_Y = 135.4
             ;
 
     // ================= TURRET PIVOT OFFSET =================
@@ -57,11 +57,11 @@ public class TurretController {
     private static final double MIN_VELOCITY_FOR_PREDICTION = 2.0;
 
     // ================= PID CONTROL (SOFT TUNING FOR PLASTIC GEARS) =================
-    private static final double KP = 0.012;
+    private static final double KP = 0.035;
     private static final double KD = 0.001;
-    private static final double KF = 0.04;
-    private static final double MAX_POWER = 0.25; // Capped speed to protect gears
-    private static final double DEADBAND = 2.0;
+    private static final double KF = 0.06;
+    private static final double MAX_POWER = 0.6; // Capped speed to protect gears
+    private static final double DEADBAND = 0.5;
 
     private double targetAngle = 0.0;
     private double previousAngle = 0.0;
