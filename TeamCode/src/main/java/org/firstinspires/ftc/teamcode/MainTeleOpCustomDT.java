@@ -11,12 +11,13 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-@TeleOp(name="Main TeleOp", group="TeleOp")
+@TeleOp(name="MainTeleOpCustom", group="TeleOp")
 public class MainTeleOpCustomDT extends OpMode {
 
     // --- Subsystems ---
     private Follower follower;
     private TurretController turretController;
+
 
     private DcMotor leftFront, leftRear, rightFront, rightRear, intake;
     private DcMotorEx leftShooter, rightShooter;
@@ -40,8 +41,6 @@ public class MainTeleOpCustomDT extends OpMode {
     private long lastDriveTime = 0;
 
     // Tuning constant: Max amount of power change allowed per second.
-    // 2.5 means it takes 0.4 seconds to stop from full speed (1.0 / 2.5 = 0.4s).
-    // Lower this number to stop smoother (less tipping), raise it to stop faster.
     public static double DRIVE_RATE_LIMIT = 2.5;
 
     // --- Holding Poses ---
@@ -130,20 +129,16 @@ public class MainTeleOpCustomDT extends OpMode {
         double dtDrive = (currentMillis - lastDriveTime) / 1000.0;
         lastDriveTime = currentMillis;
 
-        // 1. Get raw target inputs from gamepad
         double targetForward = holdingEmptyGate ? 0 : gamepad1.left_stick_y;
         double targetStrafe  = holdingEmptyGate ? 0 : -gamepad1.left_stick_x;
         double targetTurn    = holdingEmptyGate ? 0 : -gamepad1.right_stick_x;
 
-        // 2. Calculate maximum allowed change for this specific frame
         double maxChange = DRIVE_RATE_LIMIT * dtDrive;
 
-        // 3. Step the current powers toward the targets, clamped by maxChange
         currentForward += Math.max(-maxChange, Math.min(maxChange, targetForward - currentForward));
         currentStrafe  += Math.max(-maxChange, Math.min(maxChange, targetStrafe - currentStrafe));
         currentTurn    += Math.max(-maxChange, Math.min(maxChange, targetTurn - currentTurn));
 
-        // 4. Send the smoothed values to Pedro Pathing
         follower.setTeleOpDrive(-currentForward, currentStrafe, currentTurn, true);
 
         // --- Manual Velocity Prediction Math ---
@@ -192,6 +187,7 @@ public class MainTeleOpCustomDT extends OpMode {
         telemetry.addData("Distance", "%.2f", distance);
         telemetry.addData("Target RPM", "%.2f", targetVel);
         telemetry.addData("Turret Angle", "%.2f", turretController.getCurrentAngle());
+        telemetry.addData("Offset Needed", "%.2f", turretController.ANGLE_OFFSET);
         telemetry.update();
     }
 }
