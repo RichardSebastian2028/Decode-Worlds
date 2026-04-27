@@ -53,10 +53,10 @@ public class TurretController {
     private static final double TURRET_OFFSET_STRAFE = 0.0;
 
     // ================= FINE TRIM =================
-    public double ANGLE_OFFSET = -62;
+    public double ANGLE_OFFSET = 0;
 
     // ================= PREDICTIVE AIMING =================
-    private static final double XY_SCALAR = 0.0; // Set to 0 to stop predictive jittering
+    private static final double XY_SCALAR = 0.4; // Set to 0 to stop predictive jittering
     private static final double MIN_VELOCITY_FOR_PREDICTION = 2.0;
 
     // ================= PID CONTROL (SOFT TUNING FOR PLASTIC GEARS) =================

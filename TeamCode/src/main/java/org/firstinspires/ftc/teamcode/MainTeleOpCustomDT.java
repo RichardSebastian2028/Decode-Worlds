@@ -24,15 +24,15 @@ public class MainTeleOpCustomDT extends OpMode {
     private Servo blockerServo;
 
     // --- SHOOTER PIDF COEFFICIENTS ---
-    public static double SHOOTER_P = 115;
+    public static double SHOOTER_P = 104;
     public static double SHOOTER_I = 0;
     public static double SHOOTER_D = 0.0;
-    public static double SHOOTER_F = 16;
+    public static double SHOOTER_F = 17;
 
     // --- SHOOTER REGRESSION CONSTANTS ---
     private final double REG_A = 0.0321632;   // quadratic
     private final double REG_B = -0.489268;   // linear
-    private final double REG_C = 1236.75193;  // constant base speed
+    private final double REG_C = 1326.75193;  // constant base speed
 
     // --- Slew Rate Limiter Variables ---
     private double currentForward = 0.0;
