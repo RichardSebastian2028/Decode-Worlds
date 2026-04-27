@@ -366,5 +366,14 @@ public class BLUE12BALLAUTO extends OpMode {
 
     @Override
     public void stop() {
+        Pose finalPose = follower.getPose();
+        PedroPose.saveCurrentPose(finalPose);
+
+        // 2. Save the Turret's final raw encoder ticks
+        if (turretController != null) {
+            PedroPose.saveTurretTicks(turretController.getRawTicks());
+        }
+
+        super.stop();
     }
 }

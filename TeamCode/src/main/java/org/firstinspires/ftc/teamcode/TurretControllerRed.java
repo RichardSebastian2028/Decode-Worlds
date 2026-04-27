@@ -9,9 +9,9 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.util.Range;
 
 /**
- * TurretController with Auto-Homing, Settling Pause, and Anti-Slip Slew Rate Limiting.
+ * TurretControllerRed with Auto-Homing, Settling Pause, and Anti-Slip Slew Rate Limiting.
  */
-public class TurretController {
+public class TurretControllerRed {
 
     private DcMotorEx turretMotor;
     private DigitalChannel limitSwitch;
@@ -23,12 +23,12 @@ public class TurretController {
     public enum TurretState { HOMING, PAUSED, TRACKING }
     public TurretState currentState = TurretState.HOMING;
 
-    private static final double HOMING_POWER = -0.55; // Moves right to find the switch
-    private static final long PAUSE_DURATION_MS = 150; // 1 second pause to prevent gear slip
+    private static final double HOMING_POWER = -0.55;
+    private static final long PAUSE_DURATION_MS = 150;
     private long pauseStartTime = 0;
 
     // ================= GEAR PROTECTION (SLEW RATE) =================
-    private static final double POWER_ACCEL_LIMIT = 1.5; // Max power change per second
+    private static final double POWER_ACCEL_LIMIT = 1.5;
     private double currentAppliedPower = 0.0;
 
     // ================= MOTOR + GEAR =================
@@ -40,13 +40,11 @@ public class TurretController {
     private static final double MIN_ANGLE = -180.0;
     private static final double MAX_ANGLE = 180.0;
 
-    // *** NEW: Tell the code where the limit switch physically is relative to "straight ahead" ***
-    // e.g., If the switch is 90 degrees to the right, and right is negative, use -90.0
     private static final double HOMING_ANGLE_DEGREES = -12.17; // <-- TUNE THIS
 
-    // ================= GOAL LOCATION =================
-    private static final double GOAL_X = 5.3;
-    private static final double GOAL_Y = 135.4;
+    // ================= RED GOAL LOCATION =================
+    private static final double GOAL_X = 138.7; // 144 - 5.3
+    private static final double GOAL_Y = 135.4; // Remains the same in Pedro Pathing
 
     // ================= TURRET PIVOT OFFSET =================
     private static final double TURRET_OFFSET_FORWARD = 0.0;
@@ -56,14 +54,14 @@ public class TurretController {
     public double ANGLE_OFFSET = 0;
 
     // ================= PREDICTIVE AIMING =================
-    private static final double XY_SCALAR = 0.4; // Set to 0 to stop predictive jittering
+    private static final double XY_SCALAR = 0.4;
     private static final double MIN_VELOCITY_FOR_PREDICTION = 2.0;
 
-    // ================= PID CONTROL (SOFT TUNING FOR PLASTIC GEARS) =================
+    // ================= PID CONTROL =================
     private static final double KP = 0.035;
     private static final double KD = 0.001;
     private static final double KF = 0.12;
-    private static final double MAX_POWER = 0.6; // Capped speed to protect gears
+    private static final double MAX_POWER = 0.6;
     private static final double DEADBAND = 0.2;
 
     private double targetAngle = 0.0;
@@ -71,7 +69,7 @@ public class TurretController {
     private long lastTime = 0;
 
     // ================= CONSTRUCTOR =================
-    public TurretController(HardwareMap hardwareMap, String motorName) {
+    public TurretControllerRed(HardwareMap hardwareMap, String motorName) {
         turretMotor = hardwareMap.get(DcMotorEx.class, motorName);
 
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -87,56 +85,29 @@ public class TurretController {
         currentState = TurretState.HOMING;
     }
 
-    // ================= TELEOP AUTO-RESUME =================
-    public void setSavedTicks(int savedTicks) {
-        // Since the constructor resets the motor encoder to 0,
-        // the saved ticks become our absolute offset.
-        this.encoderOffset = savedTicks;
-
-        // Skip homing and go straight to tracking
-        this.currentState = TurretState.TRACKING;
-
-        // Tell the turret to hold its current position so it doesn't snap dangerously
-        this.targetAngle = getCurrentAngle();
-    }
-
     // ================= GETTERS =================
-    public double getCurrentAngle() {
+    public double getCurrentAngleRed() {
         return (turretMotor.getCurrentPosition() + encoderOffset) / COUNTS_PER_DEGREE;
     }
 
-    public int getRawTicks() {
+    public int getRawTicksRed() {
         return turretMotor.getCurrentPosition() + encoderOffset;
     }
 
-    public void resetEncoder() {
+    public void resetEncoderRed() {
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         targetAngle = 0;
 
-        // Reset offset to assume we are straight ahead IF called manually
         encoderOffset = 0;
-
         currentAppliedPower = 0.0;
         turretMotor.setPower(0);
         wasLimitTriggered = false;
         currentState = TurretState.TRACKING;
     }
 
-    // ================= DRIFT CORRECTION =================
-    private void checkHomingDrift() {
-        boolean isTriggered = !limitSwitch.getState();
-
-        if (isTriggered && !wasLimitTriggered) {
-            int rawTicks = turretMotor.getCurrentPosition();
-            // *** UPDATED: Set the offset so current position evaluates to HOMING_ANGLE_DEGREES
-            encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE) - rawTicks;
-        }
-        wasLimitTriggered = isTriggered;
-    }
-
     // ================= TURRET WORLD POSITION =================
-    private double[] getTurretWorldPosition(Pose robotPose) {
+    private double[] getTurretWorldPositionRed(Pose robotPose) {
         double heading = robotPose.getHeading();
 
         double worldOffsetX = TURRET_OFFSET_FORWARD * Math.cos(heading)
@@ -151,15 +122,15 @@ public class TurretController {
     }
 
     // ================= CALCULATION LOGIC =================
-    public double getDistanceToGoal(Pose currentPose) {
-        double[] turretWorld = getTurretWorldPosition(currentPose);
+    public double getDistanceToRedGoal(Pose currentPose) {
+        double[] turretWorld = getTurretWorldPositionRed(currentPose);
         double dx = GOAL_X - turretWorld[0];
         double dy = GOAL_Y - turretWorld[1];
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    public double calculateTurretAngle(Pose currentPose) {
-        double[] turretWorld = getTurretWorldPosition(currentPose);
+    public double calculateRedTurretAngle(Pose currentPose) {
+        double[] turretWorld = getTurretWorldPositionRed(currentPose);
 
         double dx = GOAL_X - turretWorld[0];
         double dy = GOAL_Y - turretWorld[1];
@@ -175,93 +146,70 @@ public class TurretController {
         return Range.clip(finalTurretAngle, MIN_ANGLE, MAX_ANGLE);
     }
 
-    public double calculateTurretAngleWithPrediction(Pose currentPose, Pose velocity) {
+    public double calculateRedTurretAngleWithPrediction(Pose currentPose, Pose velocity) {
         double speed = Math.sqrt(velocity.getX() * velocity.getX() + velocity.getY() * velocity.getY());
 
         if (speed < MIN_VELOCITY_FOR_PREDICTION) {
-            return calculateTurretAngle(currentPose);
+            return calculateRedTurretAngle(currentPose);
         }
 
         double predictedX = currentPose.getX() + (velocity.getX() * XY_SCALAR);
         double predictedY = currentPose.getY() + (velocity.getY() * XY_SCALAR);
         Pose predictedPose = new Pose(predictedX, predictedY, currentPose.getHeading());
 
-        return calculateTurretAngle(predictedPose);
+        return calculateRedTurretAngle(predictedPose);
     }
 
     // ================= PID LOOP =================
-    public void setTargetAngle(double angle) {
+    public void setTargetAngleRed(double angle) {
         this.targetAngle = Range.clip(angle, MIN_ANGLE, MAX_ANGLE);
     }
 
-    public void aimAtGoalWithPrediction(Pose currentPose, Pose velocity) {
-        double target = calculateTurretAngleWithPrediction(currentPose, velocity);
-        setTargetAngle(target);
-        update();
+    public void aimAtRedGoalWithPrediction(Pose currentPose, Pose velocity) {
+        double target = calculateRedTurretAngleWithPrediction(currentPose, velocity);
+        setTargetAngleRed(target);
+        updateRed();
     }
 
-    public void update() {
-        // =========================================================
-        // PHASE 1: HOMING SEQUENCE
-        // =========================================================
+    public void updateRed() {
         if (currentState == TurretState.HOMING) {
-            if (limitSwitch.getState() == true) { // Magnet NOT detected yet
+            if (limitSwitch.getState() == true) {
                 turretMotor.setPower(HOMING_POWER);
-            } else { // Magnet DETECTED!
+            } else {
                 turretMotor.setPower(0);
                 turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
                 turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-                // *** UPDATED: Inject the physical angle of the limit switch into the offset
                 encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE);
-
-                // Keep derivative calculation smooth by resetting previous angle to where we are now
                 previousAngle = HOMING_ANGLE_DEGREES;
                 currentAppliedPower = 0.0;
 
-                // Start the pause timer and switch state
                 pauseStartTime = System.currentTimeMillis();
                 currentState = TurretState.PAUSED;
             }
             return;
         }
 
-        // =========================================================
-        // PHASE 1.5: SETTLING PAUSE
-        // =========================================================
         if (currentState == TurretState.PAUSED) {
-            turretMotor.setPower(0); // Ensure motor stays off
-
-            // If 1 second (1000ms) has passed, proceed to tracking
+            turretMotor.setPower(0);
             if (System.currentTimeMillis() - pauseStartTime >= PAUSE_DURATION_MS) {
                 currentState = TurretState.TRACKING;
             }
             return;
         }
 
-        // =========================================================
-        // PHASE 2: NORMAL TRACKING (PID + SLEW RATE)
-        // =========================================================
-
-        // 1. Correct drift if we pass over the limit switch
-        //checkHomingDrift();
-
-        // 2. Calculate Angle Error
-        double currentAngle = getCurrentAngle();
+        double currentAngle = getCurrentAngleRed();
         double error = targetAngle - currentAngle;
 
-        // REMOVED ERROR WRAPPING:
-        // This forces the turret to "unwind" the long way back around
-        // if the target flips from 180 to -180, protecting your wires!
+        while (error > 180) error -= 360;
+        while (error <= -180) error += 360;
 
-        // 3. Time Delta calculation
         long now = System.currentTimeMillis();
         double dt = (now - lastTime) / 1000.0;
         lastTime = now;
 
         if (dt <= 0.001) dt = 0.001;
 
-        // --- DEADBAND (STOPPING LOGIC) ---
         if (Math.abs(error) < DEADBAND) {
             turretMotor.setPower(0);
             currentAppliedPower = 0.0;
@@ -269,7 +217,6 @@ public class TurretController {
             return;
         }
 
-        // 4. PID + Feedforward Math
         double p = KP * error;
         double derivative = (currentAngle - previousAngle) / dt;
         double d = -KD * derivative;
@@ -277,24 +224,17 @@ public class TurretController {
 
         double targetPower = p + d + f;
 
-        // 5. Safety Limits near 180/-180
         double currentMaxPower = MAX_POWER;
         if ((currentAngle < MIN_ANGLE + 10.0 && targetPower < 0) || (currentAngle > MAX_ANGLE - 10.0 && targetPower > 0)) {
-            currentMaxPower = 0.20; // NOTE: Bump this to 0.30 if the turret still gets stuck near the limits!
+            currentMaxPower = 0.20;
         }
         targetPower = Range.clip(targetPower, -currentMaxPower, currentMaxPower);
 
-        // =========================================================
-        // 6. GEAR PROTECTION: ASYMMETRIC SLEW RATE LIMITER
-        // =========================================================
         double maxPowerChange = POWER_ACCEL_LIMIT * dt;
 
-        // If we are trying to STOP or slow down, allow instant power changes to prevent overshoot
         if (Math.abs(targetPower) < Math.abs(currentAppliedPower) || Math.signum(targetPower) != Math.signum(currentAppliedPower)) {
             currentAppliedPower = targetPower;
-        }
-        // If we are ACCELERATING, limit the rate of change to protect gears
-        else {
+        } else {
             if (targetPower > currentAppliedPower + maxPowerChange) {
                 currentAppliedPower += maxPowerChange;
             } else if (targetPower < currentAppliedPower - maxPowerChange) {
@@ -304,7 +244,6 @@ public class TurretController {
             }
         }
 
-        // Apply smoothed power to motor
         turretMotor.setPower(currentAppliedPower);
         previousAngle = currentAngle;
     }

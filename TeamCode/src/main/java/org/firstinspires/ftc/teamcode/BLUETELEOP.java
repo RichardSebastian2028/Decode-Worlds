@@ -11,8 +11,8 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-@TeleOp(name="MainTeleOpCustom", group="TeleOp")
-public class MainTeleOpCustomDT extends OpMode {
+@TeleOp(name="BLUE TELEOP", group="TeleOp")
+public class BLUETELEOP extends OpMode {
 
     // --- Subsystems ---
     private Follower follower;
@@ -59,11 +59,19 @@ public class MainTeleOpCustomDT extends OpMode {
         // --- 1. Pedro Pathing Follower ---
         follower = Constants.createFollower(hardwareMap);
         follower.setMaxPower(1);
-        follower.setStartingPose(new Pose(54.9, 7.4, Math.toRadians(90)));
+
+        // Fetch starting pose from Auto, or use default if Auto didn't run
+        Pose startPose = org.firstinspires.ftc.teamcode.PedroPose.getTeleOpStartPose();
+        follower.setStartingPose(startPose);
 
         // --- 2. Turret Controller ---
         turretController = new TurretController(hardwareMap, "Turret");
 
+        // Check if we have saved ticks from Auto. If yes, skip homing!
+        Integer savedTurretTicks = org.firstinspires.ftc.teamcode.PedroPose.getTurretTicks();
+        if (savedTurretTicks != null) {
+            turretController.setSavedTicks(savedTurretTicks);
+        }
         // --- 3. Drivetrain Hardware ---
         leftFront = hardwareMap.get(DcMotor.class, "FL");
         leftRear = hardwareMap.get(DcMotor.class, "BL");
