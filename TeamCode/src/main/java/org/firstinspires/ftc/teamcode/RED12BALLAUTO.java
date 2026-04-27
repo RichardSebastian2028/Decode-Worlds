@@ -9,7 +9,6 @@ import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.PathChain;
 import com.pedropathing.util.Timer;
-
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -21,7 +20,7 @@ import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 @Autonomous
 @Configurable
-public class BLUE12BALLAUTO extends OpMode {
+public class RED12BALLAUTO extends OpMode {
     private TelemetryManager panelsTelemetry;
 
     // Mechanisms
@@ -59,22 +58,22 @@ public class BLUE12BALLAUTO extends OpMode {
 
     PathState pathState;
 
-    // Poses
-    private final Pose startPose = new Pose(24.6, 126.7, Math.toRadians(135));
-    private final Pose pose1End  = new Pose(55.8, 89.9,  Math.toRadians(180));
-    private final Pose pose2End  = new Pose(44.4, 60,  Math.toRadians(180));
-    private final Pose pose3End  = new Pose(10, 60,  Math.toRadians(180));
-    private final Pose bezierIntakeToGate = new Pose(34.2, 67.1, Math.toRadians(180));
-    private final Pose pose4End  = new Pose(13.2, 71.5,  Math.toRadians(180));
-    private final Pose bezierGateToShoot  = new Pose(61.4, 61.3, Math.toRadians(180));
-    private final Pose pose5End  = new Pose(55.8, 89.9,  Math.toRadians(180));
-    private final Pose pose6End  = new Pose(42.4,   85.4,  Math.toRadians(180));
-    private final Pose pose7End  = new Pose(10.6, 85.4,  Math.toRadians(180));
-    private final Pose pose8End  = new Pose(55.8, 89.9,  Math.toRadians(180));
-    private final Pose pose9End  = new Pose(45.4, 36.5,  Math.toRadians(180));
-    private final Pose pose10End = new Pose(12.9, 36.5,  Math.toRadians(180));
-    private final Pose pose11End = new Pose(55.8, 89.9,  Math.toRadians(180));
-    private final Pose pose12End = new Pose(57.3, 110.2, Math.toRadians(180));
+    // Red Side Poses
+    private final Pose startPose = new Pose(119.4, 126.7, Math.toRadians(45));
+    private final Pose pose1End  = new Pose(88.2, 89.9, Math.toRadians(0));
+    private final Pose pose2End  = new Pose(99.6, 60.0, Math.toRadians(0));
+    private final Pose pose3End  = new Pose(134.0, 60.0, Math.toRadians(0));
+    private final Pose bezierIntakeToGate = new Pose(109.8, 67.1, Math.toRadians(0));
+    private final Pose pose4End  = new Pose(130.8, 71.5, Math.toRadians(0));
+    private final Pose bezierGateToShoot  = new Pose(82.6, 61.3, Math.toRadians(0));
+    private final Pose pose5End  = new Pose(88.2, 89.9, Math.toRadians(0));
+    private final Pose pose6End  = new Pose(101.6, 85.4, Math.toRadians(0));
+    private final Pose pose7End  = new Pose(133.4, 85.4, Math.toRadians(0));
+    private final Pose pose8End  = new Pose(88.2, 89.9, Math.toRadians(0));
+    private final Pose pose9End  = new Pose(98.6, 36.5, Math.toRadians(0));
+    private final Pose pose10End = new Pose(131.1, 36.5, Math.toRadians(0));
+    private final Pose pose11End = new Pose(88.2, 89.9, Math.toRadians(0));
+    private final Pose pose12End = new Pose(86.7, 110.2, Math.toRadians(0));
 
     private PathChain path1, path2, path3, path4, path5, path6, path7, path8,
             path9, path10, path11, path12;
