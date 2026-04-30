@@ -54,7 +54,7 @@ public class TurretController {
     private static final double TURRET_OFFSET_STRAFE = 0.0;
 
     // ================= FINE TRIM =================
-    public double ANGLE_OFFSET = 3;
+    public double ANGLE_OFFSET = -3;
 
     // ================= PREDICTIVE AIMING =================
     private static final double XY_SCALAR = 0.4; // Set to 0 to stop predictive jittering
