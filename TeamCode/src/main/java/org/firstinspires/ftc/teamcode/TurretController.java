@@ -11,6 +11,8 @@ import com.qualcomm.robotcore.util.Range;
 /**
  * TurretController with Auto-Homing, Settling Pause, and Anti-Slip Slew Rate Limiting.
  * Wrap-around hysteresis and power nerfing removed for direct boundary tracking.
+ * Dynamic Shoot-On-The-Move predictive aiming implemented.
+ * UPDATED: Asymmetrical bounds for Left-Side Homing at +243.9 degrees.
  */
 public class TurretController {
 
@@ -24,7 +26,7 @@ public class TurretController {
     public enum TurretState { HOMING, PAUSED, TRACKING }
     public TurretState currentState = TurretState.HOMING;
 
-    private static final double HOMING_POWER = -0.55; // Moves right to find the switch
+    private static final double HOMING_POWER = 0.65; // Moves left (positive power) to find the switch
     private static final long PAUSE_DURATION_MS = 104; // 1 second pause to prevent gear slip
     private long pauseStartTime = 0;
 
@@ -37,11 +39,11 @@ public class TurretController {
     private static final double TICKS_PER_MOTOR_REV = 384.5;
     private static final double COUNTS_PER_DEGREE = (TICKS_PER_MOTOR_REV * GEAR_RATIO) / 360.0;
 
-    // ================= LIMITS & OFFSETS =================
-    private static final double MIN_ANGLE = -180.0;
-    private static final double MAX_ANGLE = 180.0;
+    // ================= ASYMMETRICAL LIMITS & OFFSETS =================
+    private static final double MIN_ANGLE = -190.0; // Farthest it can spin right before wire tangle
+    private static final double MAX_ANGLE = 170.0;  // Farthest it can spin left (encompasses the switch)
 
-    private static final double HOMING_ANGLE_DEGREES = -12.17; // <-- TUNE THIS
+    private static final double HOMING_ANGLE_DEGREES = 168.2;
 
     // ================= GOAL LOCATION =================
     private static final double GOAL_X = 5.3;
@@ -52,7 +54,7 @@ public class TurretController {
     private static final double TURRET_OFFSET_STRAFE = 0.0;
 
     // ================= FINE TRIM =================
-    public double ANGLE_OFFSET = 0;
+    public double ANGLE_OFFSET = 3;
 
     // ================= PREDICTIVE AIMING =================
     private static final double XY_SCALAR = 0.4; // Set to 0 to stop predictive jittering
@@ -157,9 +159,11 @@ public class TurretController {
         double robotHeading = Math.toDegrees(currentPose.getHeading());
         double relativeAngle = absTargetAngle - robotHeading;
 
-        // Standard Math Wrap to [-180, 180]
-        while (relativeAngle > 180) relativeAngle -= 360;
-        while (relativeAngle <= -180) relativeAngle += 360;
+        // NEW: Dynamic Math Wrap into valid physical bounds!
+        // Instead of forcing everything between -180 and 180, this forces
+        // the shortest path that keeps the wires/gears safe based on your specific limits.
+        while (relativeAngle > MAX_ANGLE) relativeAngle -= 360;
+        while (relativeAngle <= MIN_ANGLE) relativeAngle += 360;
 
         double finalTurretAngle = relativeAngle + ANGLE_OFFSET;
 
