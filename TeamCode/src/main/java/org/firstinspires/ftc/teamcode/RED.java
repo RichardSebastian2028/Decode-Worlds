@@ -11,8 +11,8 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-@TeleOp(name="RED TELEOP", group="TeleOp")
-public class REDTELEOP extends OpMode {
+@TeleOp(name="RED", group="TeleOp")
+public class RED extends OpMode {
 
     // --- Subsystems ---
     private Follower follower;
@@ -55,22 +55,22 @@ public class REDTELEOP extends OpMode {
     private Pose lastPose = null;
     private long lastTime = 0;
 
+    // --- Shoot Macro Variables ---
+    private boolean wasBlockerClosed = true;
+    private long blockerOpenTime = 0;
+    public static long MACRO_FEED_DELAY_MS = 150; // Delay to let the servo fully open. TUNE THIS if it jams.
+
     @Override
     public void init() {
+        // --- 1. Pedro Pathing Follower ---
         follower = Constants.createFollower(hardwareMap);
         follower.setMaxPower(1);
 
-        // 1. GET POSE FROM AUTO (or use fallback if testing TeleOp standalone)
-        Pose startPose = PedroPose.getTeleOpStartPose();
-        follower.setStartingPose(startPose);
+        // Mirrored starting X for Red side (144 - 54.9 = 89.1)
+        follower.setStartingPose(new Pose(89.1, 7.4, Math.toRadians(90)));
 
-        // 2. INIT TURRET
+        // --- 2. Turret Controller (UPDATED) ---
         turretController = new TurretControllerRed(hardwareMap, "Turret");
-
-        // 3. RESTORE TURRET POSITION
-        if (PedroPose.getTurretTicks() != null) {
-            turretController.setSavedTicksRed(PedroPose.getTurretTicks());
-        }
 
         // --- 3. Drivetrain Hardware ---
         leftFront = hardwareMap.get(DcMotor.class, "FL");
@@ -180,9 +180,37 @@ public class REDTELEOP extends OpMode {
         if (gamepad2.dpad_left) turretController.ANGLE_OFFSET += 0.2;
         if (gamepad2.dpad_right) turretController.ANGLE_OFFSET -= 0.2;
 
-        // --- Intake & Blocker ---
-        intake.setPower(gamepad2.right_bumper ? 1.0 : (gamepad2.cross ? -0.9 : 0.0));
-        blockerServo.setPosition(gamepad2.left_bumper ? 0.3 : 1.0);
+        // ==========================================================
+        // --- Shoot Macro: Open Blocker THEN Feed Intake ---
+        // ==========================================================
+        double intakePower;
+        double blockerPos;
+
+        if (gamepad2.left_bumper) {
+            blockerPos = 0.3; // 1. Open blocker immediately
+
+            // Start timer the moment the bumper is first pressed
+            if (wasBlockerClosed) {
+                blockerOpenTime = System.currentTimeMillis();
+                wasBlockerClosed = false;
+            }
+
+            // 2. Wait for servo to move, THEN run intake
+            if (System.currentTimeMillis() - blockerOpenTime > MACRO_FEED_DELAY_MS) {
+                intakePower = 1.0; // Auto-feed element into shooter
+            } else {
+                // While waiting for the servo, allow normal manual intake control
+                intakePower = gamepad2.right_bumper ? 1.0 : (gamepad2.cross ? -0.9 : 0.0);
+            }
+        } else {
+            // Button released: Reset macro and revert to full manual control
+            wasBlockerClosed = true;
+            blockerPos = 1.0; // Close blocker
+            intakePower = gamepad2.right_bumper ? 1.0 : (gamepad2.cross ? -0.9 : 0.0);
+        }
+
+        blockerServo.setPosition(blockerPos);
+        intake.setPower(intakePower);
 
         // --- Shooter Speed Regression (UPDATED TO RED METHODS) ---
         double distance = turretController.getDistanceToRedGoal(currentPose);

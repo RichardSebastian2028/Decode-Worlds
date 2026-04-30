@@ -10,6 +10,7 @@ import com.qualcomm.robotcore.util.Range;
 
 /**
  * TurretController with Auto-Homing, Settling Pause, and Anti-Slip Slew Rate Limiting.
+ * Wrap-around hysteresis and power nerfing removed for direct boundary tracking.
  */
 public class TurretController {
 
@@ -24,11 +25,11 @@ public class TurretController {
     public TurretState currentState = TurretState.HOMING;
 
     private static final double HOMING_POWER = -0.55; // Moves right to find the switch
-    private static final long PAUSE_DURATION_MS = 150; // 1 second pause to prevent gear slip
+    private static final long PAUSE_DURATION_MS = 104; // 1 second pause to prevent gear slip
     private long pauseStartTime = 0;
 
     // ================= GEAR PROTECTION (SLEW RATE) =================
-    private static final double POWER_ACCEL_LIMIT = 1.5; // Max power change per second
+    private static final double POWER_ACCEL_LIMIT = 5.0;
     private double currentAppliedPower = 0.0;
 
     // ================= MOTOR + GEAR =================
@@ -40,8 +41,6 @@ public class TurretController {
     private static final double MIN_ANGLE = -180.0;
     private static final double MAX_ANGLE = 180.0;
 
-    // *** NEW: Tell the code where the limit switch physically is relative to "straight ahead" ***
-    // e.g., If the switch is 90 degrees to the right, and right is negative, use -90.0
     private static final double HOMING_ANGLE_DEGREES = -12.17; // <-- TUNE THIS
 
     // ================= GOAL LOCATION =================
@@ -61,10 +60,10 @@ public class TurretController {
 
     // ================= PID CONTROL (SOFT TUNING FOR PLASTIC GEARS) =================
     private static final double KP = 0.035;
-    private static final double KD = 0.001;
-    private static final double KF = 0.12;
-    private static final double MAX_POWER = 0.6; // Capped speed to protect gears
-    private static final double DEADBAND = 0.2;
+    private static final double KD = 0.004;
+    private static final double KF = 0.08;
+    private static final double MAX_POWER = 0.85;
+    private static final double DEADBAND = 1.5;
 
     private double targetAngle = 0.0;
     private double previousAngle = 0.0;
@@ -89,14 +88,8 @@ public class TurretController {
 
     // ================= TELEOP AUTO-RESUME =================
     public void setSavedTicks(int savedTicks) {
-        // Since the constructor resets the motor encoder to 0,
-        // the saved ticks become our absolute offset.
         this.encoderOffset = savedTicks;
-
-        // Skip homing and go straight to tracking
         this.currentState = TurretState.TRACKING;
-
-        // Tell the turret to hold its current position so it doesn't snap dangerously
         this.targetAngle = getCurrentAngle();
     }
 
@@ -113,10 +106,7 @@ public class TurretController {
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         targetAngle = 0;
-
-        // Reset offset to assume we are straight ahead IF called manually
         encoderOffset = 0;
-
         currentAppliedPower = 0.0;
         turretMotor.setPower(0);
         wasLimitTriggered = false;
@@ -129,7 +119,6 @@ public class TurretController {
 
         if (isTriggered && !wasLimitTriggered) {
             int rawTicks = turretMotor.getCurrentPosition();
-            // *** UPDATED: Set the offset so current position evaluates to HOMING_ANGLE_DEGREES
             encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE) - rawTicks;
         }
         wasLimitTriggered = isTriggered;
@@ -168,10 +157,13 @@ public class TurretController {
         double robotHeading = Math.toDegrees(currentPose.getHeading());
         double relativeAngle = absTargetAngle - robotHeading;
 
+        // Standard Math Wrap to [-180, 180]
         while (relativeAngle > 180) relativeAngle -= 360;
         while (relativeAngle <= -180) relativeAngle += 360;
 
         double finalTurretAngle = relativeAngle + ANGLE_OFFSET;
+
+        // Let the pure math govern the target, relying purely on clip to enforce physical limits.
         return Range.clip(finalTurretAngle, MIN_ANGLE, MAX_ANGLE);
     }
 
@@ -201,60 +193,38 @@ public class TurretController {
     }
 
     public void update() {
-        // =========================================================
-        // PHASE 1: HOMING SEQUENCE
-        // =========================================================
         if (currentState == TurretState.HOMING) {
-            if (limitSwitch.getState() == true) { // Magnet NOT detected yet
+            if (limitSwitch.getState() == true) {
                 turretMotor.setPower(HOMING_POWER);
-            } else { // Magnet DETECTED!
+            } else {
                 turretMotor.setPower(0);
                 turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
                 turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-                // *** UPDATED: Inject the physical angle of the limit switch into the offset
                 encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE);
-
-                // Keep derivative calculation smooth by resetting previous angle to where we are now
                 previousAngle = HOMING_ANGLE_DEGREES;
                 currentAppliedPower = 0.0;
 
-                // Start the pause timer and switch state
                 pauseStartTime = System.currentTimeMillis();
                 currentState = TurretState.PAUSED;
             }
             return;
         }
 
-        // =========================================================
-        // PHASE 1.5: SETTLING PAUSE
-        // =========================================================
         if (currentState == TurretState.PAUSED) {
-            turretMotor.setPower(0); // Ensure motor stays off
-
-            // If 1 second (1000ms) has passed, proceed to tracking
+            turretMotor.setPower(0);
             if (System.currentTimeMillis() - pauseStartTime >= PAUSE_DURATION_MS) {
                 currentState = TurretState.TRACKING;
             }
             return;
         }
 
-        // =========================================================
-        // PHASE 2: NORMAL TRACKING (PID + SLEW RATE)
-        // =========================================================
+        // Apply active drift correction during tracking
+        checkHomingDrift();
 
-        // 1. Correct drift if we pass over the limit switch
-        //checkHomingDrift();
-
-        // 2. Calculate Angle Error
         double currentAngle = getCurrentAngle();
         double error = targetAngle - currentAngle;
 
-        // REMOVED ERROR WRAPPING:
-        // This forces the turret to "unwind" the long way back around
-        // if the target flips from 180 to -180, protecting your wires!
-
-        // 3. Time Delta calculation
         long now = System.currentTimeMillis();
         double dt = (now - lastTime) / 1000.0;
         lastTime = now;
@@ -273,27 +243,26 @@ public class TurretController {
         double p = KP * error;
         double derivative = (currentAngle - previousAngle) / dt;
         double d = -KD * derivative;
-        double f = Math.signum(error) * KF;
+
+        // FADE OUT FIX: Only apply the violent feedforward bump if we are far away from the target
+        double f = 0.0;
+        if (Math.abs(error) > 3.0) {
+            f = Math.signum(error) * KF;
+        }
 
         double targetPower = p + d + f;
 
-        // 5. Safety Limits near 180/-180
-        double currentMaxPower = MAX_POWER;
-        if ((currentAngle < MIN_ANGLE + 10.0 && targetPower < 0) || (currentAngle > MAX_ANGLE - 10.0 && targetPower > 0)) {
-            currentMaxPower = 0.20; // NOTE: Bump this to 0.30 if the turret still gets stuck near the limits!
-        }
-        targetPower = Range.clip(targetPower, -currentMaxPower, currentMaxPower);
+        // Safely clip raw target power before applying slew rate limiter
+        targetPower = Range.clip(targetPower, -MAX_POWER, MAX_POWER);
 
         // =========================================================
         // 6. GEAR PROTECTION: ASYMMETRIC SLEW RATE LIMITER
         // =========================================================
         double maxPowerChange = POWER_ACCEL_LIMIT * dt;
 
-        // If we are trying to STOP or slow down, allow instant power changes to prevent overshoot
         if (Math.abs(targetPower) < Math.abs(currentAppliedPower) || Math.signum(targetPower) != Math.signum(currentAppliedPower)) {
             currentAppliedPower = targetPower;
         }
-        // If we are ACCELERATING, limit the rate of change to protect gears
         else {
             if (targetPower > currentAppliedPower + maxPowerChange) {
                 currentAppliedPower += maxPowerChange;
@@ -304,7 +273,6 @@ public class TurretController {
             }
         }
 
-        // Apply smoothed power to motor
         turretMotor.setPower(currentAppliedPower);
         previousAngle = currentAngle;
     }

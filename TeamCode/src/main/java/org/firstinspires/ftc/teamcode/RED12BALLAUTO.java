@@ -18,7 +18,7 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-@Autonomous
+@Autonomous(name="RED 12 BALL AUTO", group="Autonomous")
 @Configurable
 public class RED12BALLAUTO extends OpMode {
     private TelemetryManager panelsTelemetry;
@@ -28,14 +28,17 @@ public class RED12BALLAUTO extends OpMode {
     private DcMotor intake;
     private Servo blocker;
 
-    // External Turret Controller
-    private TurretController turretController;
+    // --- UPDATED: External Red Turret Controller ---
+    private TurretControllerRed turretController;
 
-    public double shootVelocity = 1500;
+    // --- SHOOTER REGRESSION CONSTANTS (Synced from TeleOp) ---
+    private final double REG_A = 0.0321632;
+    private final double REG_B = -0.489268;
+    private final double REG_C = 1326.75193;
 
     // Software
     public Follower follower;
-    private Timer pathTimer, opModeTimer, kickTimer;
+    private Timer pathTimer, opModeTimer;
 
     // Manual Velocity Calculation
     private Pose lastPose = new Pose(0,0,0);
@@ -44,7 +47,6 @@ public class RED12BALLAUTO extends OpMode {
 
     // Shooting state
     private boolean shooting = false;
-    private int ballsShot = 0;
 
     public enum PathState {
         DRIVE_PATH1, SPIN_UP1, SHOOT1, INTAKECLOSE1,
@@ -108,17 +110,17 @@ public class RED12BALLAUTO extends OpMode {
 
             case SPIN_UP1:
                 blocker.setPosition(0.3);
-                if (!follower.isBusy() && pathTimer.getElapsedTimeSeconds() > 3.0) {
-                    ballsShot = 0;
+                // Wait for bot to arrive AND turret to potentially settle
+                if (!follower.isBusy() && pathTimer.getElapsedTimeSeconds() > 1.5) {
                     setPathState(PathState.SHOOT1);
                 }
                 break;
 
             case SHOOT1:
                 intake.setPower(1.0);
-                if (!shooting && pathTimer.getElapsedTimeSeconds() > 0.5) {
+                if (pathTimer.getElapsedTimeSeconds() > 0.8) {
                     follower.followPath(path2, true);
-                    setPathState(PathState.INTAKECLOSE1); // Correct
+                    setPathState(PathState.INTAKECLOSE1);
                 }
                 break;
 
@@ -163,16 +165,15 @@ public class RED12BALLAUTO extends OpMode {
             case SPIN_UP2:
                 blocker.setPosition(0.3);
                 if (pathTimer.getElapsedTimeSeconds() > 1.0) {
-                    ballsShot = 0;
                     setPathState(PathState.SHOOT2);
                 }
                 break;
 
             case SHOOT2:
                 intake.setPower(1.0);
-                if (!shooting && pathTimer.getElapsedTimeSeconds() > 0.5) {
+                if (pathTimer.getElapsedTimeSeconds() > 0.8) {
                     follower.followPath(path6, true);
-                    setPathState(PathState.INTAKECLOSE2); // CHANGED: Was INTAKECLOSE1
+                    setPathState(PathState.INTAKECLOSE2);
                 }
                 break;
 
@@ -210,16 +211,15 @@ public class RED12BALLAUTO extends OpMode {
             case SPIN_UP3:
                 blocker.setPosition(0.3);
                 if (pathTimer.getElapsedTimeSeconds() > 1.0) {
-                    ballsShot = 0;
                     setPathState(PathState.SHOOT3);
                 }
                 break;
 
             case SHOOT3:
                 intake.setPower(1.0);
-                if (!shooting && pathTimer.getElapsedTimeSeconds() > 0.5) {
+                if (pathTimer.getElapsedTimeSeconds() > 0.8) {
                     follower.followPath(path9, true);
-                    setPathState(PathState.INTAKECLOSE3); // CHANGED: Was INTAKECLOSE1
+                    setPathState(PathState.INTAKECLOSE3);
                 }
                 break;
 
@@ -252,16 +252,15 @@ public class RED12BALLAUTO extends OpMode {
             case SPIN_UP4:
                 blocker.setPosition(0.3);
                 if (pathTimer.getElapsedTimeSeconds() > 1.0) {
-                    ballsShot = 0;
                     setPathState(PathState.SHOOT4);
                 }
                 break;
 
             case SHOOT4:
                 intake.setPower(1.0);
-                if (!shooting && pathTimer.getElapsedTimeSeconds() > 0.5) {
+                if (pathTimer.getElapsedTimeSeconds() > 0.8) {
                     follower.followPath(path12, true);
-                    setPathState(PathState.INTAKECLOSE4); // CHANGED: Was INTAKECLOSE1
+                    setPathState(PathState.INTAKECLOSE4);
                 }
                 break;
 
@@ -291,7 +290,6 @@ public class RED12BALLAUTO extends OpMode {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
         pathTimer = new Timer();
         opModeTimer = new Timer();
-        kickTimer = new Timer();
 
         follower = Constants.createFollower(hardwareMap);
         follower.setPose(startPose);
@@ -302,14 +300,15 @@ public class RED12BALLAUTO extends OpMode {
         intake = hardwareMap.get(DcMotor.class, "Intake");
         blocker = hardwareMap.get(Servo.class, "blocker");
 
-        turretController = new TurretController(hardwareMap, "Turret");
+        // --- UPDATED: Red Turret Controller Init ---
+        turretController = new TurretControllerRed(hardwareMap, "Turret");
 
         shooter1.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         shooter2.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         shooter1.setDirection(DcMotorEx.Direction.REVERSE);
         shooter2.setDirection(DcMotorEx.Direction.FORWARD);
 
-        PIDFCoefficients pidf = new PIDFCoefficients(90, 0, 0, 16);
+        PIDFCoefficients pidf = new PIDFCoefficients(104, 0, 0, 17); // Synced with Teleop
         shooter1.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
         shooter2.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
 
@@ -332,7 +331,7 @@ public class RED12BALLAUTO extends OpMode {
     public void loop() {
         follower.update();
 
-        // Manual Velocity Calculation
+        // Manual Velocity Calculation for Prediction
         long currentTime = System.currentTimeMillis();
         double dt = (currentTime - lastUpdateTime) / 1000.0;
         Pose currentPose = follower.getPose();
@@ -340,30 +339,43 @@ public class RED12BALLAUTO extends OpMode {
         if (dt > 0) {
             double vx = (currentPose.getX() - lastPose.getX()) / dt;
             double vy = (currentPose.getY() - lastPose.getY()) / dt;
-            double vHeading = (currentPose.getHeading() - lastPose.getHeading()) / dt;
-            currentVelocity = new Pose(vx, vy, vHeading);
+
+            double diffHeading = currentPose.getHeading() - lastPose.getHeading();
+            while (diffHeading > Math.PI)  diffHeading -= 2 * Math.PI;
+            while (diffHeading < -Math.PI) diffHeading += 2 * Math.PI;
+
+            currentVelocity = new Pose(vx, vy, diffHeading / dt);
         }
 
-        lastPose = currentPose;
+        lastPose = new Pose(currentPose.getX(), currentPose.getY(), currentPose.getHeading());
         lastUpdateTime = currentTime;
 
-        shooter1.setVelocity(shootVelocity);
-        shooter2.setVelocity(shootVelocity);
+        // --- AUTOMATIC SHOOTER VELOCITY (Regression) ---
+        double distance = turretController.getDistanceToRedGoal(currentPose);
+        double targetVel = (REG_A * Math.pow(distance, 2)) + (REG_B * distance) + REG_C;
+
+        shooter1.setVelocity(targetVel);
+        shooter2.setVelocity(targetVel);
 
         statePathUpdate();
 
-        // Feed tracking and prediction to the external class
-        turretController.aimAtGoalWithPrediction(currentPose, currentVelocity);
+        // --- CONSTANT TURRET TRACKING ---
+        // This runs every single loop, aiming at the goal even while driving
+        turretController.aimAtRedGoalWithPrediction(currentPose, currentVelocity);
 
         // Telemetry
-        panelsTelemetry.debug("Heading (deg)", Math.toDegrees(currentPose.getHeading()));
+        panelsTelemetry.debug("Distance to Goal", distance);
+        panelsTelemetry.debug("Target RPM", targetVel);
+        panelsTelemetry.debug("Turret Angle", turretController.getCurrentAngleRed());
         panelsTelemetry.debug("Path State", pathState);
-        panelsTelemetry.debug("VX", currentVelocity.getX());
-        panelsTelemetry.debug("VY", currentVelocity.getY());
         panelsTelemetry.update(telemetry);
     }
 
     @Override
     public void stop() {
+        PedroPose.saveCurrentPose(follower.getPose());
+
+        // Save the exact physical tick count of the turret
+        PedroPose.saveTurretTicks(turretController.getRawTicksRed());
     }
 }

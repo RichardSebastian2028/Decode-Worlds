@@ -10,6 +10,8 @@ import com.qualcomm.robotcore.util.Range;
 
 /**
  * TurretControllerRed with Auto-Homing, Settling Pause, and Anti-Slip Slew Rate Limiting.
+ * Wrap-around hysteresis and power nerfing removed for direct boundary tracking.
+ * Smoothed Feedforward and increased slew rate for faster, fluid tracking.
  */
 public class TurretControllerRed {
 
@@ -24,11 +26,11 @@ public class TurretControllerRed {
     public TurretState currentState = TurretState.HOMING;
 
     private static final double HOMING_POWER = -0.55;
-    private static final long PAUSE_DURATION_MS = 150;
+    private static final long PAUSE_DURATION_MS = 50; // Synced with Blue
     private long pauseStartTime = 0;
 
     // ================= GEAR PROTECTION (SLEW RATE) =================
-    private static final double POWER_ACCEL_LIMIT = 1.5;
+    private static final double POWER_ACCEL_LIMIT = 12.0; // Synced with Blue
     private double currentAppliedPower = 0.0;
 
     // ================= MOTOR + GEAR =================
@@ -58,11 +60,12 @@ public class TurretControllerRed {
     private static final double MIN_VELOCITY_FOR_PREDICTION = 2.0;
 
     // ================= PID CONTROL =================
+    // Synced with Blue for mechanical consistency
     private static final double KP = 0.035;
-    private static final double KD = 0.001;
-    private static final double KF = 0.12;
-    private static final double MAX_POWER = 0.6;
-    private static final double DEADBAND = 0.2;
+    private static final double KD = 0.004;
+    private static final double KF = 0.08;
+    private static final double MAX_POWER = 0.85;
+    private static final double DEADBAND = 1.5;
 
     private double targetAngle = 0.0;
     private double previousAngle = 0.0;
@@ -85,6 +88,13 @@ public class TurretControllerRed {
         currentState = TurretState.HOMING;
     }
 
+    // ================= TELEOP AUTO-RESUME =================
+    public void setSavedTicksRed(int savedTicks) {
+        this.encoderOffset = savedTicks;
+        this.currentState = TurretState.TRACKING;
+        this.targetAngle = getCurrentAngleRed();
+    }
+
     // ================= GETTERS =================
     public double getCurrentAngleRed() {
         return (turretMotor.getCurrentPosition() + encoderOffset) / COUNTS_PER_DEGREE;
@@ -98,12 +108,22 @@ public class TurretControllerRed {
         turretMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turretMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         targetAngle = 0;
-
         encoderOffset = 0;
         currentAppliedPower = 0.0;
         turretMotor.setPower(0);
         wasLimitTriggered = false;
         currentState = TurretState.TRACKING;
+    }
+
+    // ================= DRIFT CORRECTION =================
+    private void checkHomingDrift() {
+        boolean isTriggered = !limitSwitch.getState();
+
+        if (isTriggered && !wasLimitTriggered) {
+            int rawTicks = turretMotor.getCurrentPosition();
+            encoderOffset = (int) (HOMING_ANGLE_DEGREES * COUNTS_PER_DEGREE) - rawTicks;
+        }
+        wasLimitTriggered = isTriggered;
     }
 
     // ================= TURRET WORLD POSITION =================
@@ -198,11 +218,11 @@ public class TurretControllerRed {
             return;
         }
 
+        // Apply active drift correction during tracking
+        checkHomingDrift();
+
         double currentAngle = getCurrentAngleRed();
         double error = targetAngle - currentAngle;
-
-        while (error > 180) error -= 360;
-        while (error <= -180) error += 360;
 
         long now = System.currentTimeMillis();
         double dt = (now - lastTime) / 1000.0;
@@ -217,19 +237,23 @@ public class TurretControllerRed {
             return;
         }
 
+        // 4. PID Math
         double p = KP * error;
         double derivative = (currentAngle - previousAngle) / dt;
         double d = -KD * derivative;
-        double f = Math.signum(error) * KF;
+
+        // SMOOTH FADE OUT FIX
+        double fadeFactor = Math.min(1.0, Math.abs(error) / 5.0);
+        double f = Math.signum(error) * KF * fadeFactor;
 
         double targetPower = p + d + f;
 
-        double currentMaxPower = MAX_POWER;
-        if ((currentAngle < MIN_ANGLE + 10.0 && targetPower < 0) || (currentAngle > MAX_ANGLE - 10.0 && targetPower > 0)) {
-            currentMaxPower = 0.20;
-        }
-        targetPower = Range.clip(targetPower, -currentMaxPower, currentMaxPower);
+        // Safely clip raw target power before applying slew rate limiter
+        targetPower = Range.clip(targetPower, -MAX_POWER, MAX_POWER);
 
+        // =========================================================
+        // 6. GEAR PROTECTION: ASYMMETRIC SLEW RATE LIMITER
+        // =========================================================
         double maxPowerChange = POWER_ACCEL_LIMIT * dt;
 
         if (Math.abs(targetPower) < Math.abs(currentAppliedPower) || Math.signum(targetPower) != Math.signum(currentAppliedPower)) {
