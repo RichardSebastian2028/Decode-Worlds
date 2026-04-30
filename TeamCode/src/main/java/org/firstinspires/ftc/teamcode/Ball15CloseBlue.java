@@ -37,6 +37,7 @@ public class Ball15CloseBlue extends OpMode {
     public double blockerClosed = 1.0;
     public double fullDumpDuration = 1;
     public double blockerMoveDelay = 0.25;
+    public double intakeExtraTrafficTime = 0.5; // How long to run intake while driving back
 
     public Follower follower;
     private Timer pathTimer, opModeTimer, kickTimer;
@@ -47,7 +48,6 @@ public class Ball15CloseBlue extends OpMode {
 
     private boolean isShooting = false;
 
-    // --- NEW STRICT STATE MACHINE ---
     public enum PathState {
         WAIT_FOR_HOMING,
         WAIT_INITIAL_ARRIVAL, SHOOT_PRELOAD,
@@ -60,7 +60,7 @@ public class Ball15CloseBlue extends OpMode {
 
     PathState pathState;
 
-    // --- Poses from JSON ---
+    // --- Poses ---
     private final Pose startPose      = new Pose(23.4, 125.2, Math.toRadians(135));
     private final Pose shootPreload   = new Pose(58.0, 82.7,  Math.toRadians(180));
     private final Pose controlshootPreloadintakeSpike2 = new Pose(66.1, 56.3, Math.toRadians(180));
@@ -68,12 +68,11 @@ public class Ball15CloseBlue extends OpMode {
     private final Pose controlintakeSpike2openGatePose = new Pose(35.9, 64.6, Math.toRadians(180));
     private final Pose openGatePose   = new Pose(15.1, 68.4,  Math.toRadians(180));
     private final Pose intakeGatePose = new Pose(8.5,  57.5,  Math.toRadians(140));
-    private final Pose intakeSpike1   = new Pose(16.2, 82.6,  Math.toRadians(180));
+    private final Pose intakeSpike1   = new Pose(15.2, 82.6,  Math.toRadians(180));
     private final Pose shoot5Pose     = new Pose(56.5, 105.7, Math.toRadians(180));
     private final Pose contolOpenGatePoseShootPreload = new Pose(61.3, 60.8, Math.toRadians(180));
     private final Pose controlShootPreloadIntakeGatePose = new Pose(61.3, 60.8, Math.toRadians(180));
     private final Pose controlIntakeGatePoseShootPreload = new Pose(50.9, 67.0, Math.toRadians(180));
-
 
     private PathChain p1, p2, p3, p4, p5, p6, p7, p8, p9, p10;
 
@@ -133,14 +132,12 @@ public class Ball15CloseBlue extends OpMode {
     }
 
     public void statePathUpdate() {
-
+        follower.setMaxPower(0.9);
 
         switch (pathState) {
-
-            // --- 1. INITIAL HOMING & FIRST SHOT ---
             case WAIT_FOR_HOMING:
                 if (turretController.currentState == TurretController.TurretState.TRACKING || pathTimer.getElapsedTimeSeconds() > 3.0) {
-                    follower.followPath(p1); // Start driving
+                    follower.followPath(p1);
                     setPathState(PathState.WAIT_INITIAL_ARRIVAL);
                 }
                 break;
@@ -150,16 +147,13 @@ public class Ball15CloseBlue extends OpMode {
                     if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
                         setPathState(PathState.SHOOT_PRELOAD);
                     }
-                } else {
-                    pathTimer.resetTimer(); // Keep at 0 while driving
-                }
+                } else { pathTimer.resetTimer(); }
                 break;
 
             case SHOOT_PRELOAD:
                 runShootingLogic(PathState.PREP_INTAKE_1);
                 break;
 
-            // --- 2. SPIKE 2 TO OPEN GATE TO SHOOT ---
             case PREP_INTAKE_1:
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
@@ -172,15 +166,15 @@ public class Ball15CloseBlue extends OpMode {
 
             case DRIVE_TO_SPIKE_2:
                 if (!follower.isBusy()) {
-                    follower.followPath(p3); // Start driving to Open Gate
+                    follower.followPath(p3);
                     setPathState(PathState.DRIVE_TO_OPEN_GATE);
                 }
                 break;
 
             case DRIVE_TO_OPEN_GATE:
                 if (!follower.isBusy()) {
-                    follower.followPath(p4); // Start driving back to shoot
-                    intake.setPower(0);
+                    follower.followPath(p4);
+                    intake.setPower(0); // Standard off (no extra run here per request)
                     blocker.setPosition(blockerClosed);
                     setPathState(PathState.DRIVE_TO_SHOOT_2);
                 }
@@ -191,16 +185,13 @@ public class Ball15CloseBlue extends OpMode {
                     if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
                         setPathState(PathState.SHOOT_2);
                     }
-                } else {
-                    pathTimer.resetTimer();
-                }
+                } else { pathTimer.resetTimer(); }
                 break;
 
             case SHOOT_2:
                 runShootingLogic(PathState.PREP_INTAKE_2);
                 break;
 
-            // --- 3. GATE INTAKE 1 (WITH 1 SECOND DELAY) ---
             case PREP_INTAKE_2:
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
@@ -213,28 +204,25 @@ public class Ball15CloseBlue extends OpMode {
 
             case DRIVE_TO_GATE_1:
                 if (!follower.isBusy()) {
-                    // We arrived! Now we trigger the dedicated wait state.
                     setPathState(PathState.WAIT_AT_GATE_1);
                 }
                 break;
 
             case WAIT_AT_GATE_1:
-                // Intake is running, robot is still. Wait 1 second.
-                if (pathTimer.getElapsedTimeSeconds() > 1.0) {
+                if (pathTimer.getElapsedTimeSeconds() > 1.5) {
                     follower.followPath(p6);
-                    intake.setPower(0);
+                    intake.setPower(1.0); // Extra run
                     blocker.setPosition(blockerClosed);
                     setPathState(PathState.DRIVE_TO_SHOOT_3);
                 }
                 break;
 
             case DRIVE_TO_SHOOT_3:
+                if (pathTimer.getElapsedTimeSeconds() > intakeExtraTrafficTime) {
+                    intake.setPower(0);
+                }
                 if (!follower.isBusy()) {
-                    if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
-                        setPathState(PathState.SHOOT_3);
-                    }
-                } else {
-                    pathTimer.resetTimer();
+                    setPathState(PathState.SHOOT_3);
                 }
                 break;
 
@@ -242,7 +230,6 @@ public class Ball15CloseBlue extends OpMode {
                 runShootingLogic(PathState.PREP_INTAKE_3);
                 break;
 
-            // --- 4. GATE INTAKE 2 (WITH 1 SECOND DELAY) ---
             case PREP_INTAKE_3:
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
@@ -260,22 +247,20 @@ public class Ball15CloseBlue extends OpMode {
                 break;
 
             case WAIT_AT_GATE_2:
-                // Intake is running, robot is still. Wait 1 second.
-                if (pathTimer.getElapsedTimeSeconds() > 1.0) {
+                if (pathTimer.getElapsedTimeSeconds() > 1.5) {
                     follower.followPath(p8);
-                    intake.setPower(0);
+                    intake.setPower(1.0); // Extra run
                     blocker.setPosition(blockerClosed);
                     setPathState(PathState.DRIVE_TO_SHOOT_4);
                 }
                 break;
 
             case DRIVE_TO_SHOOT_4:
+                if (pathTimer.getElapsedTimeSeconds() > intakeExtraTrafficTime) {
+                    intake.setPower(0);
+                }
                 if (!follower.isBusy()) {
-                    if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
-                        setPathState(PathState.SHOOT_4);
-                    }
-                } else {
-                    pathTimer.resetTimer();
+                    setPathState(PathState.SHOOT_4);
                 }
                 break;
 
@@ -283,7 +268,6 @@ public class Ball15CloseBlue extends OpMode {
                 runShootingLogic(PathState.PREP_INTAKE_4);
                 break;
 
-            // --- 5. SPIKE 1 TO SHOOT (NO DELAY) ---
             case PREP_INTAKE_4:
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
@@ -297,19 +281,19 @@ public class Ball15CloseBlue extends OpMode {
             case DRIVE_TO_SPIKE_1:
                 if (!follower.isBusy()) {
                     follower.followPath(p10);
-                    intake.setPower(0);
+                    intake.setPower(1.0); // KEEP INTAKE ON for Spike 1 (Last Intake)
                     blocker.setPosition(blockerClosed);
                     setPathState(PathState.DRIVE_TO_SHOOT_5);
                 }
                 break;
 
             case DRIVE_TO_SHOOT_5:
+                // Kill intake halfway through path for Spike 1 sequence
+                if (pathTimer.getElapsedTimeSeconds() > intakeExtraTrafficTime) {
+                    intake.setPower(0);
+                }
                 if (!follower.isBusy()) {
-                    if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
-                        setPathState(PathState.SHOOT_5);
-                    }
-                } else {
-                    pathTimer.resetTimer();
+                    setPathState(PathState.SHOOT_5);
                 }
                 break;
 
@@ -345,7 +329,6 @@ public class Ball15CloseBlue extends OpMode {
         shooter2 = hardwareMap.get(DcMotorEx.class, "LS");
         intake = hardwareMap.get(DcMotor.class, "Intake");
         blocker = hardwareMap.get(Servo.class, "blocker");
-
         turretController = new TurretController(hardwareMap, "Turret");
 
         shooter1.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
@@ -353,13 +336,12 @@ public class Ball15CloseBlue extends OpMode {
         shooter1.setDirection(DcMotorEx.Direction.REVERSE);
         shooter2.setDirection(DcMotorEx.Direction.FORWARD);
 
-        PIDFCoefficients pidf = new PIDFCoefficients(90, 0, 0, 16);
+        PIDFCoefficients pidf = new PIDFCoefficients(85, 0, 0, 15);
         shooter1.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
         shooter2.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
 
         blocker.setPosition(blockerClosed);
         buildPaths();
-
         setPathState(PathState.WAIT_FOR_HOMING);
     }
 
@@ -394,11 +376,23 @@ public class Ball15CloseBlue extends OpMode {
         }
 
         statePathUpdate();
-
         turretController.aimAtGoalWithPrediction(currentPose, currentVelocity);
 
         panelsTelemetry.debug("Path State", pathState);
         panelsTelemetry.debug("Turret State", turretController.currentState);
         panelsTelemetry.update(telemetry);
+    }
+
+    @Override
+    public void stop() {
+        Pose finalPose = follower.getPose();
+        PedroPose.saveCurrentPose(finalPose);
+
+        // 2. Save the Turret's final raw encoder ticks
+        if (turretController != null) {
+            PedroPose.saveTurretTicks(turretController.getRawTicks());
+        }
+
+        super.stop();
     }
 }
