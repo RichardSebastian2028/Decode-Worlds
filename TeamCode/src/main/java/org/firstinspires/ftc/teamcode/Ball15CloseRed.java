@@ -10,7 +10,6 @@ import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.PathChain;
 import com.pedropathing.util.Timer;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -19,10 +18,9 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
-@Disabled
 @Autonomous
 @Configurable
-public class Ball15Close extends OpMode {
+public class Ball15CloseRed extends OpMode {
     private TelemetryManager panelsTelemetry;
 
     // Mechanisms
@@ -30,15 +28,16 @@ public class Ball15Close extends OpMode {
     private DcMotor intake;
     private Servo blocker;
 
-    private TurretController turretController;
-    public double shootVelocity = 1500;
+    private TurretControllerRed turretControllerRed;
+    public double shootVelocity = 1550;
 
     // --- Configurable Timings & Positions ---
-    public double spinUpTime = 0.8;
+    public double spinUpTime = 0;
     public double blockerOpen = 0.3;
     public double blockerClosed = 1.0;
-    public double fullDumpDuration = 1.2;
+    public double fullDumpDuration = 1;
     public double blockerMoveDelay = 0.25;
+    public double intakeExtraTrafficTime = 0.5; // How long to run intake while driving back
 
     public Follower follower;
     private Timer pathTimer, opModeTimer, kickTimer;
@@ -50,76 +49,62 @@ public class Ball15Close extends OpMode {
     private boolean isShooting = false;
 
     public enum PathState {
-        INITIAL_SPINUP, SHOOT_PRELOAD,
-        PREP_INTAKE_1, INTAKE_SPIKE_2,
-        OPEN_GATE,
-        STATION_2_SPINUP, SHOOT_2,
-        PREP_INTAKE_2, INTAKE_GATE_1,
-        STATION_3_SPINUP, SHOOT_3,
-        PREP_INTAKE_3, INTAKE_GATE_2,
-        STATION_4_SPINUP, SHOOT_4,
-        PREP_INTAKE_4, INTAKE_SPIKE_1,
-        STATION_5_SPINUP, SHOOT_5,
+        WAIT_FOR_HOMING,
+        WAIT_INITIAL_ARRIVAL, SHOOT_PRELOAD,
+        PREP_INTAKE_1, DRIVE_TO_SPIKE_2, DRIVE_TO_OPEN_GATE, DRIVE_TO_SHOOT_2, SHOOT_2,
+        PREP_INTAKE_2, DRIVE_TO_GATE_1, WAIT_AT_GATE_1, DRIVE_TO_SHOOT_3, SHOOT_3,
+        PREP_INTAKE_3, DRIVE_TO_GATE_2, WAIT_AT_GATE_2, DRIVE_TO_SHOOT_4, SHOOT_4,
+        PREP_INTAKE_4, DRIVE_TO_SPIKE_1, DRIVE_TO_SHOOT_5, SHOOT_5,
         DONE
     }
 
     PathState pathState;
 
-    // --- Poses from JSON ---
-    private final Pose startPose      = new Pose(23.4, 125.2, Math.toRadians(135));
-    private final Pose shootPreload   = new Pose(58.0, 82.7,  Math.toRadians(180));
-    private final Pose controlshootPreloadintakeSpike2 = new Pose(66.1, 56.3, Math.toRadians(180));
-    private final Pose intakeSpike2   = new Pose(14.4, 58.9,  Math.toRadians(180));
-    private final Pose controlintakeSpike2openGatePose = new Pose(35.9, 64.6, Math.toRadians(180));
-    private final Pose openGatePose   = new Pose(15.1, 68.4,  Math.toRadians(180));
-    private final Pose intakeGatePose = new Pose(9.5,  58.5,  Math.toRadians(140));
-    private final Pose intakeSpike1   = new Pose(15.2, 82.6,  Math.toRadians(180));
-    private final Pose shoot5Pose     = new Pose(56.5, 105.7, Math.toRadians(180));
-    private final Pose contolOpenGatePoseShootPreload = new Pose(61.3, 60.8, Math.toRadians(180));
-    private final Pose controlShootPreloadIntakeGatePose = new Pose(61.3, 60.8, Math.toRadians(180));
-    private final Pose controlIntakeGatePoseShootPreload = new Pose(50.9, 67.0, Math.toRadians(180));
-
+    // --- Poses ---
+    private final Pose startPose      = new Pose(120.6, 125.2, Math.toRadians(45));
+    private final Pose shootPreload   = new Pose(86, 82.7,  Math.toRadians(0));
+    private final Pose controlshootPreloadintakeSpike2 = new Pose(77.9, 56.3, Math.toRadians(0));
+    private final Pose intakeSpike2   = new Pose(131.6, 58.9,  Math.toRadians(0));
+    // u were here
+    private final Pose controlintakeSpike2openGatePose = new Pose(108.1, 64.6, Math.toRadians(0));
+    private final Pose openGatePose   = new Pose(128.9, 68.4,  Math.toRadians(0));
+    private final Pose intakeGatePose = new Pose(135.5,  57.5,  Math.toRadians(40));
+    private final Pose intakeSpike1   = new Pose(128.8, 82.6,  Math.toRadians(0));
+    private final Pose shoot5Pose     = new Pose(87.5, 105.7, Math.toRadians(0));
+    private final Pose contolOpenGatePoseShootPreload = new Pose(82.7, 60.8, Math.toRadians(0));
+    private final Pose controlShootPreloadIntakeGatePose = new Pose(82.7, 60.8, Math.toRadians(0));
+    private final Pose controlIntakeGatePoseShootPreload = new Pose(93.1, 67.0, Math.toRadians(0));
 
     private PathChain p1, p2, p3, p4, p5, p6, p7, p8, p9, p10;
 
     public void buildPaths() {
-        // Path 1: Start to ShootPreload
         p1 = follower.pathBuilder().addPath(new BezierLine(startPose, shootPreload))
                 .setLinearHeadingInterpolation(startPose.getHeading(), shootPreload.getHeading()).build();
 
-        // Path 2: ShootPreload to IntakeSpike2 (Curve)
         p2 = follower.pathBuilder().addPath(new BezierCurve(shootPreload, controlshootPreloadintakeSpike2, intakeSpike2))
                 .setConstantHeadingInterpolation(intakeSpike2.getHeading()).build();
 
-        // Path 3: IntakeSpike2 to OpenGate (Curve)
         p3 = follower.pathBuilder().addPath(new BezierCurve(intakeSpike2, controlintakeSpike2openGatePose, openGatePose))
                 .setConstantHeadingInterpolation(openGatePose.getHeading()).build();
 
-        // Path 4: OpenGate to Shoot2 (Curve)
         p4 = follower.pathBuilder().addPath(new BezierCurve(openGatePose, contolOpenGatePoseShootPreload, shootPreload))
                 .setConstantHeadingInterpolation(shootPreload.getHeading()).build();
 
-        // Path 5: Shoot2 to IntakeGate (Curve)
         p5 = follower.pathBuilder().addPath(new BezierCurve(shootPreload, controlShootPreloadIntakeGatePose, intakeGatePose))
                 .setLinearHeadingInterpolation(shootPreload.getHeading(), intakeGatePose.getHeading()).build();
 
-        // Path 6: IntakeGate to Shoot3 (Curve)
         p6 = follower.pathBuilder().addPath(new BezierCurve(intakeGatePose, controlIntakeGatePoseShootPreload, shootPreload))
                 .setLinearHeadingInterpolation(intakeGatePose.getHeading(), shootPreload.getHeading()).build();
 
-        // Path 7: Shoot3 to IntakeGate2 (Reuse p5 logic/points)
         p7 = follower.pathBuilder().addPath(new BezierCurve(shootPreload,controlShootPreloadIntakeGatePose, intakeGatePose))
                 .setLinearHeadingInterpolation(shootPreload.getHeading(), intakeGatePose.getHeading()).build();
 
-        // Path 8: IntakeGate2 to Shoot4 (Reuse p6 logic/points)
         p8 = follower.pathBuilder().addPath(new BezierCurve(intakeGatePose, controlIntakeGatePoseShootPreload, shootPreload))
                 .setLinearHeadingInterpolation(intakeGatePose.getHeading(), shootPreload.getHeading()).build();
 
-        // Path 9: Shoot4 to IntakeSpike1
         p9 = follower.pathBuilder().addPath(new BezierLine(shootPreload, intakeSpike1))
                 .setConstantHeadingInterpolation(intakeSpike1.getHeading()).build();
 
-        // Path 10: IntakeSpike1 to Shoot5
         p10 = follower.pathBuilder().addPath(new BezierLine(intakeSpike1, shoot5Pose))
                 .setConstantHeadingInterpolation(shoot5Pose.getHeading()).build();
     }
@@ -133,12 +118,15 @@ public class Ball15Close extends OpMode {
     private void runShootingLogic(PathState nextState) {
         if (!isShooting) {
             blocker.setPosition(blockerOpen);
-            intake.setPower(1.0);
             isShooting = true;
             kickTimer.resetTimer();
         } else {
+            if (kickTimer.getElapsedTimeSeconds() > blockerMoveDelay) {
+                intake.setPower(1.0);
+            }
             if (kickTimer.getElapsedTimeSeconds() > fullDumpDuration) {
                 blocker.setPosition(blockerClosed);
+                intake.setPower(0);
                 setPathState(nextState);
             }
         }
@@ -148,13 +136,19 @@ public class Ball15Close extends OpMode {
         follower.setMaxPower(0.9);
 
         switch (pathState) {
-            case INITIAL_SPINUP:
-                if (!follower.isBusy()) {
+            case WAIT_FOR_HOMING:
+                if (turretControllerRed.currentState == TurretControllerRed.TurretState.TRACKING || pathTimer.getElapsedTimeSeconds() > 3.0) {
                     follower.followPath(p1);
+                    setPathState(PathState.WAIT_INITIAL_ARRIVAL);
+                }
+                break;
+
+            case WAIT_INITIAL_ARRIVAL:
+                if (!follower.isBusy()) {
                     if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
                         setPathState(PathState.SHOOT_PRELOAD);
                     }
-                }
+                } else { pathTimer.resetTimer(); }
                 break;
 
             case SHOOT_PRELOAD:
@@ -165,32 +159,34 @@ public class Ball15Close extends OpMode {
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
                 if (pathTimer.getElapsedTimeSeconds() > blockerMoveDelay) {
-                    setPathState(PathState.INTAKE_SPIKE_2);
-                }
-                break;
-
-            case INTAKE_SPIKE_2:
-                if (!follower.isBusy()) {
                     follower.followPath(p2);
                     intake.setPower(1.0);
-                    setPathState(PathState.OPEN_GATE);
+                    setPathState(PathState.DRIVE_TO_SPIKE_2);
                 }
                 break;
 
-            case OPEN_GATE:
+            case DRIVE_TO_SPIKE_2:
                 if (!follower.isBusy()) {
                     follower.followPath(p3);
-                    setPathState(PathState.STATION_2_SPINUP);
+                    setPathState(PathState.DRIVE_TO_OPEN_GATE);
                 }
                 break;
 
-            case STATION_2_SPINUP:
+            case DRIVE_TO_OPEN_GATE:
                 if (!follower.isBusy()) {
                     follower.followPath(p4);
+                    intake.setPower(0); // Standard off (no extra run here per request)
+                    blocker.setPosition(blockerClosed);
+                    setPathState(PathState.DRIVE_TO_SHOOT_2);
+                }
+                break;
+
+            case DRIVE_TO_SHOOT_2:
+                if (!follower.isBusy()) {
                     if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
                         setPathState(PathState.SHOOT_2);
                     }
-                }
+                } else { pathTimer.resetTimer(); }
                 break;
 
             case SHOOT_2:
@@ -201,24 +197,33 @@ public class Ball15Close extends OpMode {
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
                 if (pathTimer.getElapsedTimeSeconds() > blockerMoveDelay) {
-                    setPathState(PathState.INTAKE_GATE_1);
-                }
-                break;
-
-            case INTAKE_GATE_1:
-                if (!follower.isBusy()) {
                     follower.followPath(p5);
                     intake.setPower(1.0);
-                    setPathState(PathState.STATION_3_SPINUP);
+                    setPathState(PathState.DRIVE_TO_GATE_1);
                 }
                 break;
 
-            case STATION_3_SPINUP:
+            case DRIVE_TO_GATE_1:
                 if (!follower.isBusy()) {
+                    setPathState(PathState.WAIT_AT_GATE_1);
+                }
+                break;
+
+            case WAIT_AT_GATE_1:
+                if (pathTimer.getElapsedTimeSeconds() > 1.5) {
                     follower.followPath(p6);
-                    if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
-                        setPathState(PathState.SHOOT_3);
-                    }
+                    intake.setPower(1.0); // Extra run
+                    blocker.setPosition(blockerClosed);
+                    setPathState(PathState.DRIVE_TO_SHOOT_3);
+                }
+                break;
+
+            case DRIVE_TO_SHOOT_3:
+                if (pathTimer.getElapsedTimeSeconds() > intakeExtraTrafficTime) {
+                    intake.setPower(0);
+                }
+                if (!follower.isBusy()) {
+                    setPathState(PathState.SHOOT_3);
                 }
                 break;
 
@@ -230,24 +235,33 @@ public class Ball15Close extends OpMode {
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
                 if (pathTimer.getElapsedTimeSeconds() > blockerMoveDelay) {
-                    setPathState(PathState.INTAKE_GATE_2);
-                }
-                break;
-
-            case INTAKE_GATE_2:
-                if (!follower.isBusy()) {
                     follower.followPath(p7);
                     intake.setPower(1.0);
-                    setPathState(PathState.STATION_4_SPINUP);
+                    setPathState(PathState.DRIVE_TO_GATE_2);
                 }
                 break;
 
-            case STATION_4_SPINUP:
+            case DRIVE_TO_GATE_2:
                 if (!follower.isBusy()) {
+                    setPathState(PathState.WAIT_AT_GATE_2);
+                }
+                break;
+
+            case WAIT_AT_GATE_2:
+                if (pathTimer.getElapsedTimeSeconds() > 1.5) {
                     follower.followPath(p8);
-                    if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
-                        setPathState(PathState.SHOOT_4);
-                    }
+                    intake.setPower(1.0); // Extra run
+                    blocker.setPosition(blockerClosed);
+                    setPathState(PathState.DRIVE_TO_SHOOT_4);
+                }
+                break;
+
+            case DRIVE_TO_SHOOT_4:
+                if (pathTimer.getElapsedTimeSeconds() > intakeExtraTrafficTime) {
+                    intake.setPower(0);
+                }
+                if (!follower.isBusy()) {
+                    setPathState(PathState.SHOOT_4);
                 }
                 break;
 
@@ -259,24 +273,28 @@ public class Ball15Close extends OpMode {
                 blocker.setPosition(blockerClosed);
                 intake.setPower(0);
                 if (pathTimer.getElapsedTimeSeconds() > blockerMoveDelay) {
-                    setPathState(PathState.INTAKE_SPIKE_1);
-                }
-                break;
-
-            case INTAKE_SPIKE_1:
-                if (!follower.isBusy()) {
                     follower.followPath(p9);
                     intake.setPower(1.0);
-                    setPathState(PathState.STATION_5_SPINUP);
+                    setPathState(PathState.DRIVE_TO_SPIKE_1);
                 }
                 break;
 
-            case STATION_5_SPINUP:
+            case DRIVE_TO_SPIKE_1:
                 if (!follower.isBusy()) {
                     follower.followPath(p10);
-                    if (pathTimer.getElapsedTimeSeconds() > spinUpTime) {
-                        setPathState(PathState.SHOOT_5);
-                    }
+                    intake.setPower(1.0); // KEEP INTAKE ON for Spike 1 (Last Intake)
+                    blocker.setPosition(blockerClosed);
+                    setPathState(PathState.DRIVE_TO_SHOOT_5);
+                }
+                break;
+
+            case DRIVE_TO_SHOOT_5:
+                // Kill intake halfway through path for Spike 1 sequence
+                if (pathTimer.getElapsedTimeSeconds() > intakeExtraTrafficTime) {
+                    intake.setPower(0);
+                }
+                if (!follower.isBusy()) {
+                    setPathState(PathState.SHOOT_5);
                 }
                 break;
 
@@ -312,21 +330,20 @@ public class Ball15Close extends OpMode {
         shooter2 = hardwareMap.get(DcMotorEx.class, "LS");
         intake = hardwareMap.get(DcMotor.class, "Intake");
         blocker = hardwareMap.get(Servo.class, "blocker");
-
-        turretController = new TurretController(hardwareMap, "Turret");
+        turretControllerRed = new TurretControllerRed(hardwareMap, "Turret");
 
         shooter1.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         shooter2.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         shooter1.setDirection(DcMotorEx.Direction.REVERSE);
         shooter2.setDirection(DcMotorEx.Direction.FORWARD);
 
-        PIDFCoefficients pidf = new PIDFCoefficients(90, 0, 0, 16);
+        PIDFCoefficients pidf = new PIDFCoefficients(85, 0, 0, 15);
         shooter1.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
         shooter2.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidf);
 
         blocker.setPosition(blockerClosed);
         buildPaths();
-        setPathState(PathState.INITIAL_SPINUP);
+        setPathState(PathState.WAIT_FOR_HOMING);
     }
 
     @Override
@@ -360,9 +377,23 @@ public class Ball15Close extends OpMode {
         }
 
         statePathUpdate();
-        turretController.aimAtGoalWithPrediction(currentPose, currentVelocity);
+        turretControllerRed.aimAtRedGoalWithPrediction(currentPose, currentVelocity);
 
         panelsTelemetry.debug("Path State", pathState);
+        panelsTelemetry.debug("Turret State", turretControllerRed.currentState);
         panelsTelemetry.update(telemetry);
+    }
+
+    @Override
+    public void stop() {
+        Pose finalPose = follower.getPose();
+        PedroPose.saveCurrentPose(finalPose);
+
+        // 2. Save the Turret's final raw encoder ticks
+        if (turretControllerRed != null) {
+            PedroPose.saveTurretTicks(turretControllerRed.getRawTicksRed()) ;
+        }
+
+        super.stop();
     }
 }

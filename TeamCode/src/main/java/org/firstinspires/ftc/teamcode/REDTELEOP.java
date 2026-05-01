@@ -17,36 +17,27 @@ public class REDTELEOP extends OpMode {
     // --- Subsystems ---
     private Follower follower;
 
-    // 1. UPDATED: Call the Red Turret Controller
+    // Call the Red Turret Controller
     private TurretControllerRed turretController;
 
     private DcMotor leftFront, leftRear, rightFront, rightRear, intake;
     private DcMotorEx leftShooter, rightShooter;
     private Servo blockerServo;
 
-    // --- SHOOTER PIDF COEFFICIENTS ---
-    public static double SHOOTER_P = 104;
+    // --- SHOOTER PIDF COEFFICIENTS (Updated to match Blue) ---
+    public static double SHOOTER_P = 95;
     public static double SHOOTER_I = 0;
     public static double SHOOTER_D = 0.0;
-    public static double SHOOTER_F = 17;
+    public static double SHOOTER_F = 16;
 
-    // --- SHOOTER REGRESSION CONSTANTS ---
-    private final double REG_A = 0.0321632;   // quadratic
-    private final double REG_B = -0.489268;   // linear
-    private final double REG_C = 1326.75193;  // constant base speed
-
-    // --- Slew Rate Limiter Variables ---
-    private double currentForward = 0.0;
-    private double currentStrafe = 0.0;
-    private double currentTurn = 0.0;
-    private long lastDriveTime = 0;
-
-    // Tuning constant: Max amount of power change allowed per second.
-    public static double DRIVE_RATE_LIMIT = 2.5;
+    // --- SHOOTER REGRESSION CONSTANTS (Updated to match Blue) ---
+    private final double REG_A = 0.030876;
+    private final double REG_B = -0.469697;
+    private final double REG_C = 1300.6818;
 
     // --- Holding Poses (Mirrored X coordinates for Red Side) ---
-    private final Pose resetPose  = new Pose(137, 9, Math.toRadians(90)); // Flipped from 7
-    private final Pose emptyGate  = new Pose(11.5, 68.5, Math.toRadians(0)); // Flipped from 132.5
+    private final Pose resetPose  = new Pose(137, 9, Math.toRadians(90));
+    private final Pose emptyGate  = new Pose(135.5, 57.5, Math.toRadians(40));
 
     private boolean holdingEmptyGate  = false;
     private boolean firstLoop         = true;
@@ -57,19 +48,21 @@ public class REDTELEOP extends OpMode {
 
     @Override
     public void init() {
+        // --- 1. Pedro Pathing Follower ---
         follower = Constants.createFollower(hardwareMap);
         follower.setMaxPower(1);
 
-        // 1. GET POSE FROM AUTO (or use fallback if testing TeleOp standalone)
-        Pose startPose = PedroPose.getTeleOpStartPose();
+        // GET POSE FROM AUTO
+        Pose startPose = org.firstinspires.ftc.teamcode.PedroPose.getTeleOpStartPose();
         follower.setStartingPose(startPose);
 
-        // 2. INIT TURRET
+        // --- 2. Turret Controller ---
         turretController = new TurretControllerRed(hardwareMap, "Turret");
 
-        // 3. RESTORE TURRET POSITION
-        if (PedroPose.getTurretTicks() != null) {
-            turretController.setSavedTicksRed(PedroPose.getTurretTicks());
+        // RESTORE TURRET POSITION (Matches new logic from Blue)
+        Integer savedTurretTicks = org.firstinspires.ftc.teamcode.PedroPose.getTurretTicks();
+        if (savedTurretTicks != null) {
+            turretController.setSavedTicksRed(savedTurretTicks);
         }
 
         // --- 3. Drivetrain Hardware ---
@@ -111,7 +104,6 @@ public class REDTELEOP extends OpMode {
     @Override
     public void start() {
         follower.startTeleopDrive();
-        lastDriveTime = System.currentTimeMillis();
     }
 
     @Override
@@ -132,22 +124,12 @@ public class REDTELEOP extends OpMode {
             holdingEmptyGate = false;
         }
 
-        // --- Drivetrain with Slew Rate Limiting ---
-        long currentMillis = System.currentTimeMillis();
-        double dtDrive = (currentMillis - lastDriveTime) / 1000.0;
-        lastDriveTime = currentMillis;
-
+        // --- Drivetrain (Slew rate limiter removed for instant response) ---
         double targetForward = holdingEmptyGate ? 0 : gamepad1.left_stick_y;
         double targetStrafe  = holdingEmptyGate ? 0 : -gamepad1.left_stick_x;
         double targetTurn    = holdingEmptyGate ? 0 : -gamepad1.right_stick_x;
 
-        double maxChange = DRIVE_RATE_LIMIT * dtDrive;
-
-        currentForward += Math.max(-maxChange, Math.min(maxChange, targetForward - currentForward));
-        currentStrafe  += Math.max(-maxChange, Math.min(maxChange, targetStrafe - currentStrafe));
-        currentTurn    += Math.max(-maxChange, Math.min(maxChange, targetTurn - currentTurn));
-
-        follower.setTeleOpDrive(-currentForward, currentStrafe, currentTurn, true);
+        follower.setTeleOpDrive(-targetForward, targetStrafe, targetTurn, true);
 
         // --- Manual Velocity Prediction Math ---
         Pose currentPose = follower.getPose();

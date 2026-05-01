@@ -11,7 +11,8 @@ import com.qualcomm.robotcore.util.Range;
 /**
  * TurretControllerRed with Auto-Homing, Settling Pause, and Anti-Slip Slew Rate Limiting.
  * Wrap-around hysteresis and power nerfing removed for direct boundary tracking.
- * Smoothed Feedforward and increased slew rate for faster, fluid tracking.
+ * Dynamic Shoot-On-The-Move predictive aiming implemented.
+ * UPDATED: Synced physical limits, feedforward, and wrap math with Blue controller.
  */
 public class TurretControllerRed {
 
@@ -25,12 +26,12 @@ public class TurretControllerRed {
     public enum TurretState { HOMING, PAUSED, TRACKING }
     public TurretState currentState = TurretState.HOMING;
 
-    private static final double HOMING_POWER = -0.55;
-    private static final long PAUSE_DURATION_MS = 50; // Synced with Blue
+    private static final double HOMING_POWER = 0.65; // Synced with Blue
+    private static final long PAUSE_DURATION_MS = 104; // Synced with Blue
     private long pauseStartTime = 0;
 
     // ================= GEAR PROTECTION (SLEW RATE) =================
-    private static final double POWER_ACCEL_LIMIT = 12.0; // Synced with Blue
+    private static final double POWER_ACCEL_LIMIT = 5.0; // Synced with Blue
     private double currentAppliedPower = 0.0;
 
     // ================= MOTOR + GEAR =================
@@ -38,29 +39,28 @@ public class TurretControllerRed {
     private static final double TICKS_PER_MOTOR_REV = 384.5;
     private static final double COUNTS_PER_DEGREE = (TICKS_PER_MOTOR_REV * GEAR_RATIO) / 360.0;
 
-    // ================= LIMITS & OFFSETS =================
-    private static final double MIN_ANGLE = -180.0;
-    private static final double MAX_ANGLE = 180.0;
+    // ================= ASYMMETRICAL LIMITS & OFFSETS =================
+    private static final double MIN_ANGLE = -190.0; // Synced with Blue
+    private static final double MAX_ANGLE = 170.0;  // Synced with Blue
 
-    private static final double HOMING_ANGLE_DEGREES = -12.17; // <-- TUNE THIS
+    private static final double HOMING_ANGLE_DEGREES = 168.2; // Synced with Blue
 
     // ================= RED GOAL LOCATION =================
-    private static final double GOAL_X = 138.7; // 144 - 5.3
-    private static final double GOAL_Y = 135.4; // Remains the same in Pedro Pathing
+    private static final double GOAL_X = 138.7; // Red specific
+    private static final double GOAL_Y = 135.4; // Red specific
 
     // ================= TURRET PIVOT OFFSET =================
     private static final double TURRET_OFFSET_FORWARD = 0.0;
     private static final double TURRET_OFFSET_STRAFE = 0.0;
 
     // ================= FINE TRIM =================
-    public double ANGLE_OFFSET = 0;
+    public double ANGLE_OFFSET = -3; // Synced with Blue
 
     // ================= PREDICTIVE AIMING =================
     private static final double XY_SCALAR = 0.4;
     private static final double MIN_VELOCITY_FOR_PREDICTION = 2.0;
 
     // ================= PID CONTROL =================
-    // Synced with Blue for mechanical consistency
     private static final double KP = 0.035;
     private static final double KD = 0.004;
     private static final double KF = 0.08;
@@ -159,8 +159,9 @@ public class TurretControllerRed {
         double robotHeading = Math.toDegrees(currentPose.getHeading());
         double relativeAngle = absTargetAngle - robotHeading;
 
-        while (relativeAngle > 180) relativeAngle -= 360;
-        while (relativeAngle <= -180) relativeAngle += 360;
+        // NEW: Dynamic Math Wrap into valid physical bounds (Synced with Blue)
+        while (relativeAngle > MAX_ANGLE) relativeAngle -= 360;
+        while (relativeAngle <= MIN_ANGLE) relativeAngle += 360;
 
         double finalTurretAngle = relativeAngle + ANGLE_OFFSET;
         return Range.clip(finalTurretAngle, MIN_ANGLE, MAX_ANGLE);
@@ -230,6 +231,7 @@ public class TurretControllerRed {
 
         if (dt <= 0.001) dt = 0.001;
 
+        // --- DEADBAND (STOPPING LOGIC) ---
         if (Math.abs(error) < DEADBAND) {
             turretMotor.setPower(0);
             currentAppliedPower = 0.0;
@@ -237,14 +239,16 @@ public class TurretControllerRed {
             return;
         }
 
-        // 4. PID Math
+        // 4. PID + Feedforward Math
         double p = KP * error;
         double derivative = (currentAngle - previousAngle) / dt;
         double d = -KD * derivative;
 
-        // SMOOTH FADE OUT FIX
-        double fadeFactor = Math.min(1.0, Math.abs(error) / 5.0);
-        double f = Math.signum(error) * KF * fadeFactor;
+        // FADE OUT FIX: Only apply the violent feedforward bump if far away (Synced with Blue)
+        double f = 0.0;
+        if (Math.abs(error) > 3.0) {
+            f = Math.signum(error) * KF;
+        }
 
         double targetPower = p + d + f;
 
@@ -258,7 +262,8 @@ public class TurretControllerRed {
 
         if (Math.abs(targetPower) < Math.abs(currentAppliedPower) || Math.signum(targetPower) != Math.signum(currentAppliedPower)) {
             currentAppliedPower = targetPower;
-        } else {
+        }
+        else {
             if (targetPower > currentAppliedPower + maxPowerChange) {
                 currentAppliedPower += maxPowerChange;
             } else if (targetPower < currentAppliedPower - maxPowerChange) {

@@ -40,10 +40,10 @@ public class TurretController {
     private static final double COUNTS_PER_DEGREE = (TICKS_PER_MOTOR_REV * GEAR_RATIO) / 360.0;
 
     // ================= ASYMMETRICAL LIMITS & OFFSETS =================
-    private static final double MIN_ANGLE = -190.0; // Farthest it can spin right before wire tangle
-    private static final double MAX_ANGLE = 170.0;  // Farthest it can spin left (encompasses the switch)
+    private static final double MIN_ANGLE = -200.0; // Farthest it can spin right before wire tangle
+    private static final double MAX_ANGLE = 160.0;  // Farthest it can spin left (encompasses the switch)
 
-    private static final double HOMING_ANGLE_DEGREES = 168.2;
+    private static final double HOMING_ANGLE_DEGREES = 159.81;
 
     // ================= GOAL LOCATION =================
     private static final double GOAL_X = 5.3;

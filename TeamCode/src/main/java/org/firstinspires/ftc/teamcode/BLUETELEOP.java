@@ -18,7 +18,6 @@ public class BLUETELEOP extends OpMode {
     private Follower follower;
     private TurretController turretController;
 
-
     private DcMotor leftFront, leftRear, rightFront, rightRear, intake;
     private DcMotorEx leftShooter, rightShooter;
     private Servo blockerServo;
@@ -32,16 +31,7 @@ public class BLUETELEOP extends OpMode {
     // --- SHOOTER REGRESSION CONSTANTS ---
     private final double REG_A = 0.030876;   // Adjusted from 0.0321632
     private final double REG_B = -0.469697;  // Adjusted from -0.489268
-    private final double REG_C = 1273.6818;  // constant base speed
-
-    // --- Slew Rate Limiter Variables ---
-    private double currentForward = 0.0;
-    private double currentStrafe = 0.0;
-    private double currentTurn = 0.0;
-    private long lastDriveTime = 0;
-
-    // Tuning constant: Max amount of power change allowed per second.
-    public static double DRIVE_RATE_LIMIT = 2.5;
+    private final double REG_C = 1300.6818;  // constant base speed
 
     // --- Holding Poses ---
     private final Pose resetPose  = new Pose(7, 9, Math.toRadians(90));
@@ -72,6 +62,7 @@ public class BLUETELEOP extends OpMode {
         if (savedTurretTicks != null) {
             turretController.setSavedTicks(savedTurretTicks);
         }
+
         // --- 3. Drivetrain Hardware ---
         leftFront = hardwareMap.get(DcMotor.class, "FL");
         leftRear = hardwareMap.get(DcMotor.class, "BL");
@@ -111,7 +102,6 @@ public class BLUETELEOP extends OpMode {
     @Override
     public void start() {
         follower.startTeleopDrive();
-        lastDriveTime = System.currentTimeMillis();
     }
 
     @Override
@@ -132,22 +122,12 @@ public class BLUETELEOP extends OpMode {
             holdingEmptyGate = false;
         }
 
-        // --- Drivetrain with Slew Rate Limiting ---
-        long currentMillis = System.currentTimeMillis();
-        double dtDrive = (currentMillis - lastDriveTime) / 1000.0;
-        lastDriveTime = currentMillis;
-
+        // --- Drivetrain ---
         double targetForward = holdingEmptyGate ? 0 : gamepad1.left_stick_y;
         double targetStrafe  = holdingEmptyGate ? 0 : -gamepad1.left_stick_x;
         double targetTurn    = holdingEmptyGate ? 0 : -gamepad1.right_stick_x;
 
-        double maxChange = DRIVE_RATE_LIMIT * dtDrive;
-
-        currentForward += Math.max(-maxChange, Math.min(maxChange, targetForward - currentForward));
-        currentStrafe  += Math.max(-maxChange, Math.min(maxChange, targetStrafe - currentStrafe));
-        currentTurn    += Math.max(-maxChange, Math.min(maxChange, targetTurn - currentTurn));
-
-        follower.setTeleOpDrive(-currentForward, currentStrafe, currentTurn, true);
+        follower.setTeleOpDrive(-targetForward, targetStrafe, targetTurn, true);
 
         // --- Manual Velocity Prediction Math ---
         Pose currentPose = follower.getPose();
